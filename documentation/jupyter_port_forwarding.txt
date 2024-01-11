@@ -1,0 +1,18 @@
+iinstructions for port forwarding jupyter server from remote server to local machine
+
+https://ljvmiranda921.github.io/notebook/2018/01/31/running-a-jupyter-notebook/
+
+1) installed jupyter notebook on both local/remote machines using anaconda (see anaconda setup text file)
+
+2) set server password on remote machine with 'jupyter notebook password'. Note password is: 'technion'
+
+3) started server on remote machine with:
+jupyter notebook --no-browser --port=8889
+
+4) port forward via ssh with:
+ssh -L 8888:localhost:8889 isaac@132.68.106.91
+
+5) in URL browser on local machine:
+localhost:8888
+
+

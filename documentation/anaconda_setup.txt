@@ -1,0 +1,8 @@
+verified x86 architecture - in terminal: 'uname -m'
+
+installed corresponding anaconda build and followed install instructions from:
+https://docs.anaconda.com/free/anaconda/install/linux/
+
+used default install location - /home/isaac
+
+

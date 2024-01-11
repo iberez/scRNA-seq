@@ -4,4 +4,8 @@ https://docs.github.com/en/authentication/connecting-to-github-with-ssh/generati
 2) add to git profile
 https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a-new-ssh-key-to-your-github-account
 
+3) git configure
+
+    git config --global user.email "<email>"
+    git config --global user.name "<name>"
 

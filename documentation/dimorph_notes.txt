@@ -1,0 +1,6 @@
+sample data found in:
+/data/runs/samples/10X...
+
+e.g.
+/data/runs/samples/10X54_1/out10X54_1_200707/outs/filtered_feature_bc_matrix$ 
+

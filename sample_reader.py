@@ -7,41 +7,40 @@
 from scipy.io import mmread
 import os
 import glob
+import pandas as pd
+import numpy as np
+from pandas_ods_reader import read_ods
+from copy import deepcopy
+import pprint
+import json
 
-sample_dir = '/data/runs/samples/'
-dimorph_samples = ['10X54_1', 
-                   '10X54_2',
-                   '10x98_2',
-                   '10x98_3',
-                   '10X51_2',
-                   '10X51_1',
-                   '10X52_1',
-                   '10X52_2',
-                   '10X51_3',
-                   '10X51_4',
-                   '10X52_3',
-                   '10X52_4',
-                   '10X35_1',
-                   '10X35_2',
-                   '10X38_1',
-                   '10X38_2',
-                   '10X36_1',
-                   '10X36_2',
-                   '10X37_1',
-                   '10X37_2']
+def process_meta_data(analysis_dir, dimorph_sample_file, output_folder=None):
+    #read in dimorph sample file
+    dimorph_df = read_ods(analysis_dir+dimorph_sample_file)
+    #fill in missing data types
+    dimorph_df_1 = dimorph_df.rename(columns={"Group":"Group:string", 
+                                              "Avesizebp_cDNAlib":"Avesizebp_cDNAlib:float64",
+                                              "Date":"Date:string",
+                                              "cDNAul":"cDNAul:float64",
+                                              "LIbConstructionComment": "LIbConstructionComment:string"
+                                             })
+    #create lists of meta data header and data types by splitting at colon in each column name
+    mdata_header = []
+    dtype = []
+    for d in dimorph_df_1:
+        mdata_header.append(d.split(":")[0])
+        dtype.append(d.split(":")[1])
+    #get and return sample id
+    samples = [x for x in list(dimorph_df['SampleID:string']) if x != None]
+    #create meta data dictionary from sample ids
+    meta_data_dict = dict.fromkeys(samples)
+    #initialize headers for each sample
+    mdata_header_dict = dict.fromkeys(mdata_header)
+    #populate meta_data_dict with all meta data
+    for i in range(len(meta_data_dict.keys())):
+        for key,value in zip(mdata_header_dict.keys(),list(dimorph_df_1.loc[i])):
+            mdata_header_dict.update({key:value})
+        meta_data_dict.update({list(meta_data_dict.keys())[i]:deepcopy(mdata_header_dict)})
+    
+    return samples, meta_data_dict
 
-os.chdir(sample_dir)
-cwd = os.getcwd()
-#print (cwd)
-dir = str((glob.glob(cwd+'/'+dimorph_samples[0]+
-                 '/'+'*out*'+'/'+'outs'+
-                 '/'+'filtered_feature_bc_matrix'))).replace('[','').replace(']','')[1:-1]
-
-#print(cwd)
-#print (type(dir))
-#print (os.listdir(dir))
-
-m = mmread(dir + '/' + 'matrix.mtx')
-m_arr = m.toarray()
-print (m_arr)
-print (m_arr.shape)

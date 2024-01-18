@@ -120,7 +120,7 @@ def construct_sample_matrix(sample_dir, samples, sample_ind):
     cells = barcodes.iloc[:,0]
 
     #append the sample id to each cell
-    cells = barcodes.iloc[:,0] + samples[sample_ind]
+    cells = barcodes.iloc[:,0] + '_' + samples[sample_ind]
     cells = cells.values.reshape(cells.shape[0],1)
 
     #read features file and store as gene labels

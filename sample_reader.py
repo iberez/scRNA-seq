@@ -57,7 +57,7 @@ def find_latest_sample_file(sample_dir, samples, sample_ind):
     #print ('path: ', path)
     #print ('sample ind: ',samples[sample_ind])
     files = os.listdir(path)
-    print ('finding latest sample files from: ', files)
+    #print ('finding latest sample files from: ', files)
 
     date_list = []
     #isolate date YYMMDD
@@ -89,11 +89,11 @@ def find_latest_sample_file(sample_dir, samples, sample_ind):
     for file in files:
         if latest_date_key in file:
             if 'out' in file:
-                print ('found latest file: ', file)
+                #print ('found latest file: ', file)
                 return file
 
 def construct_sample_matrix(sample_dir, samples, sample_ind):
-    '''construcs a single combined sample matrix from matrix, gene, feature files'''
+    '''constructs a single combined sample matrix from matrix, gene, feature files'''
     
     os.chdir(sample_dir)
     cwd = os.getcwd()
@@ -141,5 +141,28 @@ def construct_sample_matrix(sample_dir, samples, sample_ind):
     #print('sample df size before add duplicate gene rows together: ', sample_df.shape)
     #print('adding duplicate rows...')
     sample_df_summed = sample_df.groupby(level=0).sum()
-    print('sample df after adding/removing duplicate rows: ', sample_df_summed.shape)
+    #print('sample df after adding/removing duplicate rows: ', sample_df_summed.shape)
     return sample_df_summed
+
+def combine_sample_matrices(sample_dir, samples, sample_df, outfile_name = None, write_to_csv = False):
+    '''combines sample matrices and fixes formatting issue'''
+    df_all = pd.DataFrame(index=sample_df.index)
+    print ('combining sample matrices...')
+    for i in range(len(samples)):
+        df = construct_sample_matrix(sample_dir,samples,i)
+        df_all = df_all.join(df)
+    
+    print ('combining complete, formatting...')
+    #fix formatting (remove trailing commas)
+    genes = [x[0] for x in df_all.index]
+    cells = [x[0] for x in df_all.columns]
+    df_all_copy = df_all.copy()
+    df_all_copy.index = genes
+    df_all_copy.columns = cells
+    
+    if write_to_csv:
+        print ('writing to CSV...')
+        df_all_copy.to_csv('/bigdata/isaac/'+outfile_name+'.csv', index = True, index_label=False)
+    
+    #print (df_all_copy.head)
+    return df_all_copy

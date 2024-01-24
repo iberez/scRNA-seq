@@ -1,5 +1,5 @@
-# sample reader to read samples from /data/runs/samples
-# and build each sample into a matrix
+# functions used in sample_reader_nb.ipynb to arrange/format 
+# sexual dimorphism samples into a single large dataframe.
 
 # Isaac Berez
 # 14.01.23

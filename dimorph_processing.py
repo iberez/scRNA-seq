@@ -18,6 +18,8 @@ import re
 from datetime import datetime
 import logging
 import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import HuberRegressor
 
 def create_meta_data_df(meta_data, df):
     ''' creates a new meta data df with dim (# meta data features, e.g. serial number, x # cells from big data dataframe) '''
@@ -125,3 +127,50 @@ def avg_bool_gene_expression_by_sex(df_bool, meta_data_df, num_top_genes, plot_f
         plt.show()
 
     return avg_bool_mf_df_sorted
+
+def analyze_cv(df,norm_scale_factor,num_top_genes,plot_flag):
+    '''performs normalization by summing all genes expressed per cell and diving each by sum, then scaling by norm_scale_factor. 
+    Then computes log2cv and log2mu, fits using linear and huber regression, and plots result if plot flag = 1. 
+    Labels the most highly expressed genes according to num_top_genes. Returns sorted log2mu and log2cv dataframe.'''
+    #sum each column and divide all values by sum
+    column_sums = df.loc[:,df.columns].sum(axis=0)
+    df_n = df.div(column_sums)
+    #scale by norm_scale_factor
+    df_n = df_n.multiply(norm_scale_factor)
+    #compute relevant stats
+    mu = df_n.mean(axis=1)
+    sigma = df_n.std(axis=1)
+    cv = sigma/mu
+    log2_mu = np.log2(mu)
+    log2_cv = np.log2(cv)
+    #get fit and use to get predicted values
+    X = np.reshape(np.array(log2_mu),(log2_mu.shape[0],1))
+    y = np.reshape(np.array(log2_cv),(log2_cv.shape[0],1))
+    paramfit = LinearRegression().fit(X, y)
+    log2_cv_pred = paramfit.predict(X)
+    paramfit_h = HuberRegressor().fit(X,np.ravel(y))
+    log2_cv_pred_h = paramfit_h.predict(X)
+    #compute distance from linear regression line to actual CV values
+    delta_y_2_pred = y - log2_cv_pred
+    delta_y_2_pred = np.reshape(delta_y_2_pred, (delta_y_2_pred.shape[0],))
+    #create dataframe and sort low to high by distance from fit line
+    log_mucv_df = pd.DataFrame({'log2mu':log2_mu, 'log2cv':log2_cv, 'delta': delta_y_2_pred })
+    log_mucv_df_sorted = log_mucv_df.sort_values(by = 'delta',ascending=False)
+    #get position and gene names for plotting
+    pos = np.array(log_mucv_df_sorted.iloc[:num_top_genes,0:2])
+    genes = log_mucv_df_sorted.iloc[:num_top_genes].index
+    
+    if plot_flag==1:
+        ax, fig = plt.subplots()
+        plt.scatter(log2_mu,log2_cv, marker = '.')
+        plt.xlabel('log2_mu')
+        plt.ylabel('log2_cv')
+        plt.plot(log2_mu, log2_cv_pred, c= 'r', label = 'linear regression')
+        plt.plot(log2_mu, log2_cv_pred_h, c = 'y', label = 'huber regression')
+        plt.legend()
+        offset = 0.01
+        for i in range(len(pos)):
+            plt.text(pos[i][0]+offset,pos[i][1]+offset,genes[i])
+    plt.show()
+    
+    return log_mucv_df_sorted

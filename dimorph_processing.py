@@ -28,6 +28,20 @@ def create_meta_data_df(meta_data, df):
                             meta_data_df.columns[meta_data_df.columns.str.contains(meta_data.keys()[i])]] = meta_data.loc[meta_data.index[:], meta_data.columns[i]]
     return meta_data_df
 
+def load_data(metadata_file, bigdata_file):
+    ''' reads in metadata json, big data (gene expression) feather file, returns dataframe versions for each and a boolean version of the gene expression matrix'''
+    meta_data = pd.read_json(metadata_file)
+    dimorph_df = pd.read_feather(bigdata_file)
+    dimorph_df.set_index('gene', inplace=True)
+    meta_data_df = create_meta_data_df(meta_data=meta_data, df = dimorph_df)
+    meta_data_df = meta_data_df.fillna('')
+    dimorph_df = dimorph_df.loc[:,meta_data_df.loc['Strain'].str.contains('Cntnp')==False]
+    meta_data_df = meta_data_df.loc[:,meta_data_df.loc['Strain'].str.contains('Cntnp')==False]
+    # create boolean version of the dataframe, where any expression >0 = 1,
+    dimorph_df_bool = dimorph_df.mask(dimorph_df>0, other = 1)
+    
+    return meta_data_df,dimorph_df,dimorph_df_bool
+
 def cell_exclusion(threshold_m,threshold_g, df_bool, meta_data_df, df):
     '''computes total molecules per cell and total genes per cell, 
     excludes cells below specified threshold_m (molecules) and threshold_g (genes), 
@@ -73,12 +87,17 @@ def gene_exclusion(num_cell_lwr_bound, percent_cell_upper_bound, df, df_bool, me
     print (f'Total genes reduced from {df.shape[0]} to {df_updated.shape[0]}')
     return df_updated, df_bool_updated, meta_data_df_updated
 
-def avg_bool_gene_expression_by_sex(df_bool, meta_data_df, num_top_genes):
+def avg_bool_gene_expression_by_sex(df_bool, meta_data_df, num_top_genes, plot_flag = 0):
     '''computes the mean of each gene (row) from bool expressed genes, isolated by sex, 
     and outputs these values and the delta of each mean (male - female) as a dataframe. 
-    Also plots a scatter plot using these values and labeling top genes given by num_top_genes.'''
+    If plot flag = 1,  plots a scatter plot using these values and labeling top genes given by num_top_genes.'''
     avg_bool_expr_m = df_bool.loc[:,meta_data_df.loc['Sex',:] == 'M'].mean(axis=1)
     avg_bool_expr_f = df_bool.loc[:,meta_data_df.loc['Sex',:] == 'F'].mean(axis=1)
+    #print (f"avg bool expr m dim: {avg_bool_expr_m.shape}")
+    #print (f"avg bool expr f dim: {avg_bool_expr_f.shape}")
+    print (f"num m cells: {df_bool.loc[:,meta_data_df.loc['Sex',:] == 'M'].shape[1]} num f cells: {df_bool.loc[:,meta_data_df.loc['Sex',:] == 'F'].shape[1]}")
+    
+    
     #construct avg gene bool dataframe for male/female
     avg_bool_mf_df = pd.DataFrame({'m': avg_bool_expr_m, 'f': avg_bool_expr_f})
     #compute delta for each average and add to dataframe
@@ -90,18 +109,19 @@ def avg_bool_gene_expression_by_sex(df_bool, meta_data_df, num_top_genes):
     f_pos = np.array(avg_bool_mf_df_sorted.iloc[0:num_top_genes,0:2])
     f_genes = avg_bool_mf_df_sorted.iloc[:num_top_genes].index
     m_pos = np.array(avg_bool_mf_df_sorted.iloc[-num_top_genes:,0:2])
-    m_genes = avg_bool_mf_df_sorted.iloc[num_top_genes:].index
+    m_genes = avg_bool_mf_df_sorted.iloc[-num_top_genes:].index
 
-    fig,ax = plt.subplots(figsize = (7.5,7.5))
-    plt.scatter(avg_bool_expr_m,avg_bool_expr_f, s = 1)
-    plt.xlabel('avg bool expression - male')
-    plt.ylabel('avg bool expression - female')
-    plt.title('Male vs. Female of Avg Bool Gene Expression')
-    # define offset amount for labeled genes on scatterplot
-    offset = 0.01
-    for i in range(len(f_pos)):
-        plt.text(f_pos[i][0]+offset,f_pos[i][1]+offset,f_genes[i])
-        plt.text(m_pos[i][0]+offset,m_pos[i][1]+offset,m_genes[i])
-    plt.show()
+    if plot_flag == 1:
+        fig,ax = plt.subplots(figsize = (7.5,7.5))
+        plt.scatter(avg_bool_expr_m,avg_bool_expr_f, s = 1)
+        plt.xlabel('avg bool expression - male')
+        plt.ylabel('avg bool expression - female')
+        plt.title('Male vs. Female of Avg Bool Gene Expression')
+        # define offset amount for labeled genes on scatterplot
+        offset = 0.01
+        for i in range(len(f_pos)):
+            plt.text(f_pos[i][0]+offset,f_pos[i][1]+offset,f_genes[i])
+            plt.text(m_pos[i][0]+offset,m_pos[i][1]+offset,m_genes[i])
+        plt.show()
 
     return avg_bool_mf_df_sorted

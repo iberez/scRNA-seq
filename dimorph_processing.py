@@ -154,8 +154,8 @@ def analyze_cv(df,norm_scale_factor,num_top_genes,plot_flag):
     delta_y_2_pred = y - log2_cv_pred
     delta_y_2_pred = np.reshape(delta_y_2_pred, (delta_y_2_pred.shape[0],))
     #create dataframe and sort low to high by distance from fit line
-    log_mucv_df = pd.DataFrame({'log2mu':log2_mu, 'log2cv':log2_cv, 'delta': delta_y_2_pred })
-    log_mucv_df_sorted = log_mucv_df.sort_values(by = 'delta',ascending=False)
+    log_mucv_df = pd.DataFrame({'log2mu':log2_mu, 'log2cv':log2_cv, 'delta_cv': delta_y_2_pred })
+    log_mucv_df_sorted = log_mucv_df.sort_values(by = 'delta_cv',ascending=False)
     #get position and gene names for plotting
     pos = np.array(log_mucv_df_sorted.iloc[:num_top_genes,0:2])
     genes = log_mucv_df_sorted.iloc[:num_top_genes].index

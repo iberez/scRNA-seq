@@ -20,6 +20,12 @@ import logging
 import matplotlib.pyplot as plt
 from sklearn.linear_model import LinearRegression
 from sklearn.linear_model import HuberRegressor
+from sklearn import preprocessing
+from sklearn.decomposition import PCA
+from mpl_toolkits.mplot3d import Axes3D
+from scipy.spatial.distance import pdist
+from scipy.spatial.distance import squareform
+from sklearn.manifold import TSNE
 
 def create_meta_data_df(meta_data, df):
     ''' creates a new meta data df with dim (# meta data features, e.g. serial number, x # cells from big data dataframe) '''
@@ -128,7 +134,7 @@ def avg_bool_gene_expression_by_sex(df_bool, meta_data_df, num_top_genes, plot_f
 
     return avg_bool_mf_df_sorted
 
-def analyze_cv(df,norm_scale_factor,num_top_genes,plot_flag):
+def analyze_cv(df,norm_scale_factor,num_top_genes,plot_flag, use_huber = False):
     '''performs normalization by summing all genes expressed per cell and diving each by sum, then scaling by norm_scale_factor. 
     Then computes log2cv and log2mu, fits using linear and huber regression, and plots result if plot flag = 1. 
     Labels the most highly expressed genes according to num_top_genes. Returns sorted log2mu and log2cv dataframe.'''
@@ -150,8 +156,11 @@ def analyze_cv(df,norm_scale_factor,num_top_genes,plot_flag):
     log2_cv_pred = paramfit.predict(X)
     paramfit_h = HuberRegressor().fit(X,np.ravel(y))
     log2_cv_pred_h = paramfit_h.predict(X)
-    #compute distance from linear regression line to actual CV values
-    delta_y_2_pred = y - log2_cv_pred
+    #compute distance from regression line to actual CV values
+    if use_huber:
+        delta_y_2_pred = y - np.reshape(log2_cv_pred_h,(log2_cv_pred_h.shape[0],1))
+    else:
+        delta_y_2_pred = y - log2_cv_pred
     delta_y_2_pred = np.reshape(delta_y_2_pred, (delta_y_2_pred.shape[0],))
     #create dataframe and sort low to high by distance from fit line
     log_mucv_df = pd.DataFrame({'log2mu':log2_mu, 'log2cv':log2_cv, 'delta_cv': delta_y_2_pred })
@@ -174,3 +183,195 @@ def analyze_cv(df,norm_scale_factor,num_top_genes,plot_flag):
     plt.show()
     
     return log_mucv_df_sorted
+
+def get_top_cv_genes(df, cv_df, plot_flag):
+    '''takes output of analyze cv, the cv_df sorted from high to low of cv values to fit line,
+    and determines top number of genes to select based on gene index of point closest to origin in knee plot'''
+    delta = cv_df.loc[:,'delta_cv']
+    #add + 1 since end value in arange is exclusive
+    x = np.arange(1,np.sum(delta>0)+1)
+    y = np.flip(np.sort(delta.loc[delta>0]))
+    #normalized by dividing by max value for each
+    x_n = (x-np.min(x))/(np.max(x)-np.min(x))
+    y_n = (y-np.min(y))/(np.max(y) - np.min(y))
+    #create new df to store values
+    knee_df = pd.DataFrame({'x_n':x_n,'y_n':y_n})
+    x = [x for x in knee_df.loc[:,'x_n']]
+    y = [y for y in knee_df.loc[:,'y_n']]
+    d = [np.sqrt(x**2 + y**2) for x,y in zip(x,y)]
+    knee_df.insert(2, 'dist',d)
+    #sort ascending by distance to origin and get index of closest point (first point)
+    knee_df.sort_values(by='dist', inplace=True)
+    closest_point_to_origin = knee_df.iloc[0,:]
+    gene_index = knee_df.index[0]
+    if plot_flag==1:
+        annotation_offset = 0.1
+        fig,ax = plt.subplots()
+        plt.xlabel('1:sum(delta_cv>0), normalized')
+        plt.ylabel('sort(delta_cv(delta_cv>0), normalized')
+        l = ax.scatter(x_n,y_n, marker = '.')
+        cp = ax.scatter(closest_point_to_origin.iloc[0],closest_point_to_origin.iloc[1], c = 'r')
+        plt.annotate('closest point to origin' + '\n' + 'gene index = '+str(gene_index), xy=(closest_point_to_origin.iloc[0],closest_point_to_origin.iloc[1]),
+                     xytext=(closest_point_to_origin.iloc[0]+annotation_offset,closest_point_to_origin.iloc[1]+annotation_offset),
+                    arrowprops=dict(facecolor='black', shrink=0.05),
+                    )
+        plt.show()
+    #use gene index to update df accordingly
+    updated_df = df.loc[cv_df.iloc[:gene_index,:].index,:]
+    return gene_index, updated_df
+
+def log_and_standerdize_df(df):
+    '''takes log and then performs standardization of gene expression matrix, returns np array'''
+    df = np.log2(df+1)
+    #transpose since standard scaler expects X as n_samples x n_features in order to compute mean/std along features axis
+    std_scale = preprocessing.StandardScaler().fit(df.T)
+    log_std_arr = std_scale.transform(df.T)
+    print ('row mean after standardization: {:.2f}'.format(log_std_arr[:,0].mean()))
+    print ('row sigma after standardization: {:.2f}'.format(log_std_arr[:,0].std()))
+    
+    return log_std_arr
+
+def analyze_pca(arr, n_components, plot_flag):
+    '''performs pca on arr using n_components. plots PCA explained variance ratio as a function of components, 
+    then plots a normalized version for both axes and uses closest point to origin to determine number of componets to keep'''
+    pca = PCA(n_components).fit(arr)
+    arr_pca = pca.transform(arr)
+    if plot_flag == 1:
+        ax,fig = plt.subplots()
+        plt.title('PCA - Explained Variance Ratio')
+        plt.plot(pca.explained_variance_ratio_)
+        plt.ylabel('explained variance ratio (%)')
+        plt.xlabel('component')
+        #plt.xlim([0,15])
+        plt.show()
+    #compute normalized variance ratio and component list
+    variance_ratio_n = (pca.explained_variance_ratio_ - np.min(pca.explained_variance_ratio_))/(np.max(pca.explained_variance_ratio_)-np.min(pca.explained_variance_ratio_))
+    max_component = arr.shape[1]
+    min_component = 1
+    component_list_n = ((np.arange(min_component, max_component+1)) - min_component)/(max_component - min_component)
+    #store normalized values into dataframe, compute euclidian distance from origin and insert
+    knee_df = pd.DataFrame({'component_list_n':component_list_n, 
+                        'explained_variance_ratio_n':variance_ratio_n})
+    x = [x for x in knee_df.loc[:,'component_list_n']]
+    y = [y for y in knee_df.loc[:,'explained_variance_ratio_n']]
+    d = [np.sqrt(x**2 + y**2) for x,y in zip(x,y)]
+    knee_df.insert(2, 'dist',d)
+    #sort by smallest distance, and extract corresponding index
+    knee_df.sort_values(by='dist', inplace=True)
+    if plot_flag == 1:
+        closest_point_to_origin = knee_df.iloc[0,:]
+        pca_index = knee_df.index[0]
+        annotation_offset = 0.05
+        fig,ax = plt.subplots()
+        l = ax.scatter(component_list_n,variance_ratio_n, marker = '.')
+        cp = ax.scatter(closest_point_to_origin.iloc[0],closest_point_to_origin.iloc[1], c = 'r')
+        plt.annotate('closest point to origin' + '\n' + 'pca comp index = ' + str(pca_index), xy=(closest_point_to_origin.iloc[0],closest_point_to_origin.iloc[1]),
+                    xytext=(closest_point_to_origin.iloc[0]+annotation_offset,closest_point_to_origin.iloc[1]+annotation_offset),
+                    arrowprops=dict(facecolor='black', shrink=0.05),
+                    )
+        plt.xlabel('normalized component list')
+        plt.ylabel('normalized variance ratio')
+        plt.show()
+    #update arr to contain up to pca_index number of components
+    arr_pca_indexed = arr_pca[:,:pca_index]
+    if plot_flag == 1:
+        #visualize first three pca components
+        fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
+        ax.scatter(arr_pca_indexed[:, 0], 
+                   arr_pca_indexed[:, 1], 
+                   arr_pca_indexed[:, 2], 
+                   s = 5)
+        ax.set_title("First three PCA components")
+        plt.show()
+
+    return pca_index, arr_pca_indexed
+
+def get_perplexity(pca_arr, cutoff, plot_flag):
+    '''computes optimal perplexity param for use in do_tsne() using pairwise distance matrix. see comments in function for step by step details.'''
+    #1) compute pairwise distance matrix (n_cells x n_cells) from PCA reduced matrix.
+    D = squareform(pdist(pca_arr,metric='correlation'))
+    #2) sort columns by ascending values
+    D_sorted = np.sort(D, axis=0)
+    if plot_flag == 1:
+        #visualize first 4 columns of distance matrix
+        fig, axs = plt.subplots(2, 2)
+        axs[0, 0].plot(np.arange(D.shape[0]),D_sorted[:,0])
+        axs[0, 0].set_title('D_sorted[:,0]')
+        axs[0, 1].plot(np.arange(D.shape[0]),D_sorted[:,1], 'tab:orange')
+        axs[0, 1].set_title('D_sorted[:,1]')
+        axs[1, 0].plot(np.arange(D.shape[0]),D_sorted[:,2], 'tab:green')
+        axs[1, 0].set_title('D_sorted[:,2]')
+        axs[1, 1].plot(np.arange(D.shape[0]),D_sorted[:,3], 'tab:red')
+        axs[1, 1].set_title('D_sorted[:,3]')
+
+        for ax in axs.flat:
+            ax.set(xlabel='cell_index', ylabel='counts')
+
+        # Hide x labels and tick labels for top plots and y ticks for right plots.
+        for ax in axs.flat:
+            ax.label_outer()
+
+        plt.show()
+
+    xn_list = []
+    yn_list = []
+    cut_off = 500
+    x = np.arange(cut_off)
+    #for every sorted column from the distance matrix:
+    #3) Compute angle from first point to last point of column values from index 1:cutoff
+    #4) use rotation matrix to rotate column values by this angle
+    #5) take argmax for each rotated set of column values and store in list
+    for i in range(D.shape[0]):
+        y_e = float(D_sorted[cut_off:cut_off+1,i])
+        y_1 = float(D_sorted[:1,i])
+        x_e = cut_off
+        x_1 = 0
+        a = np.arctan((y_e-y_1)/(x_e-x_1))
+        #rotate by -theta
+        x = np.arange(cut_off)
+        y = D_sorted[:cut_off,i]
+        xn = (x*np.cos(a))+(y*np.sin(a))
+        yn = -(x*np.sin(a))+(y*np.cos(a))
+        yn_list.append(max(yn))
+        xn_list.append(np.argmax(yn))
+        if i == 0 and plot_flag == 1:
+            #plot showing theta rotation on first column of distance matrix
+            fig,ax = plt.subplots(2,1, sharex=True)
+            ax[0].set_title('original 1st column of D')
+            ax[0].plot(x,y, '.', ms = 1)
+            ax[1].set_title('-theta rotated 1st column of D')
+            ax[1].plot(xn,yn, '.', ms = 1)
+            plt.show()
+
+    #6) take median of list created in step 5, this is perplexity value
+    perplexity = np.median(np.sort(xn_list))
+    
+    return perplexity
+
+def do_tsne(arr,n_components, n_iter, learning_rate, early_exaggeration, init, perplexity):
+    '''performs tsne on inputted arr with specified perplexity'''
+    #prints relevant parameters (see https://www.nature.com/articles/s41467-019-13056-x)
+    #note sklearn's learning rate is defined factor of 4 smaller than other implementations
+    #see sklearn doc: https://scikit-learn.org/stable/modules/generated/sklearn.manifold.TSNE.html
+    # Create a t-SNE object
+    print ('creating tsne object with the following parameters: \n' + 
+           'n_components:{}'.format(n_components) + '\n' +
+           'n_iter: {}'.format(n_iter) + '\n' +
+           'learning_rate: {}'.format(learning_rate) + '\n' +
+           'early_exaggeration: {}'.format(early_exaggeration) + '\n' +
+           'init: {}'.format(init) + '\n' +   
+           'perplexity: {}'.format(perplexity)     
+           )
+    tsne = TSNE(n_components=n_components,
+                n_iter=n_iter,
+                learning_rate=learning_rate,
+                early_exaggeration=early_exaggeration,
+                init=init, 
+                perplexity = perplexity)
+
+    # Apply t-SNE on the arr
+    X_tsne = tsne.fit_transform(arr)
+    #visualizse tsne
+    ax, fig = plt.subplots()
+    fig.scatter(X_tsne[:, 0], X_tsne[:, 1], s = 2)
+    plt.show()

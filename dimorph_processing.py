@@ -36,6 +36,19 @@ def create_meta_data_df(meta_data, df):
                             meta_data_df.columns[meta_data_df.columns.str.contains(meta_data.keys()[i])]] = meta_data.loc[meta_data.index[:], meta_data.columns[i]]
     return meta_data_df
 
+def intialize_status_df():
+    '''create a status def dataframe for tracking completion of each function/processing step'''
+    steps = ['cell_exclusion (l1)',
+         'gene_exclusion (l1)',
+         'get_top_cv_genes',
+         'log_and_standerdize',
+         'analyze_pca',
+         'get_perplexity',
+         'do_tsne']
+    status_df = pd.DataFrame(columns =['completion_status'], 
+                        index = steps)
+    return status_df
+
 def load_data(metadata_file, bigdata_file):
     ''' reads in metadata json, big data (gene expression) feather file, returns dataframe versions for each and a boolean version of the gene expression matrix'''
     meta_data = pd.read_json(metadata_file)
@@ -47,8 +60,8 @@ def load_data(metadata_file, bigdata_file):
     meta_data_df = meta_data_df.loc[:,meta_data_df.loc['Strain'].str.contains('Cntnp')==False]
     # create boolean version of the dataframe, where any expression >0 = 1,
     df_bool = df.mask(df>0, other = 1)
-    
-    return meta_data_df,df,df_bool
+    status_df = intialize_status_df()
+    return meta_data_df,df,df_bool,status_df
 
 def cell_exclusion(threshold_m,threshold_g, meta_data_df, df_bool, df, status_df):
     '''computes total molecules per cell and total genes per cell, 

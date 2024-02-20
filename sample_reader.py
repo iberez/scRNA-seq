@@ -144,7 +144,8 @@ def construct_sample_matrix(sample_dir, samples, sample_ind):
     #print('sample df after adding/removing duplicate rows: ', sample_df_summed.shape)
     return sample_df_summed
 
-def combine_sample_matrices(sample_dir, samples, sample_df, outfile_name = None, write_to_csv = False):
+def combine_sample_matrices(sample_dir, samples, sample_df, outfile_name = None, write_to_csv = False,
+                            write_to_feather = False):
     '''combines sample matrices and fixes formatting issue'''
     df_all = pd.DataFrame(index=sample_df.index)
     print ('combining sample matrices...')
@@ -163,6 +164,10 @@ def combine_sample_matrices(sample_dir, samples, sample_df, outfile_name = None,
     if write_to_csv:
         print ('writing to CSV...')
         df_all_copy.to_csv('/bigdata/isaac/'+outfile_name+'.csv', index = True, index_label=False)
+    if write_to_feather:
+        print ('writing to feather file...')
+        df_all_copy.to_feather('/bigdata/isaac/'+outfile_name+'.feather')
+
     
     #print (df_all_copy.head)
     return df_all_copy

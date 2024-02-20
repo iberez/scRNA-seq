@@ -366,10 +366,6 @@ def get_perplexity(pca_arr, cutoff, plot_flag, status_df):
 
 def do_tsne(arr,n_components, n_iter, learning_rate, early_exaggeration, init, perplexity, status_df):
     '''performs tsne on inputted arr with specified perplexity'''
-    #prints relevant parameters (see https://www.nature.com/articles/s41467-019-13056-x)
-    #note sklearn's learning rate is defined factor of 4 smaller than other implementations
-    #see sklearn doc: https://scikit-learn.org/stable/modules/generated/sklearn.manifold.TSNE.html
-    # Create a t-SNE object
     print ('creating tsne object with the following parameters: \n' + 
            'n_components:{}'.format(n_components) + '\n' +
            'n_iter: {}'.format(n_iter) + '\n' +

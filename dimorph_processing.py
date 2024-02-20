@@ -39,18 +39,18 @@ def create_meta_data_df(meta_data, df):
 def load_data(metadata_file, bigdata_file):
     ''' reads in metadata json, big data (gene expression) feather file, returns dataframe versions for each and a boolean version of the gene expression matrix'''
     meta_data = pd.read_json(metadata_file)
-    dimorph_df = pd.read_feather(bigdata_file)
-    dimorph_df.set_index('gene', inplace=True)
-    meta_data_df = create_meta_data_df(meta_data=meta_data, df = dimorph_df)
+    df = pd.read_feather(bigdata_file)
+    df.set_index('gene', inplace=True)
+    meta_data_df = create_meta_data_df(meta_data=meta_data, df = df)
     meta_data_df = meta_data_df.fillna('')
-    dimorph_df = dimorph_df.loc[:,meta_data_df.loc['Strain'].str.contains('Cntnp')==False]
+    df = df.loc[:,meta_data_df.loc['Strain'].str.contains('Cntnp')==False]
     meta_data_df = meta_data_df.loc[:,meta_data_df.loc['Strain'].str.contains('Cntnp')==False]
     # create boolean version of the dataframe, where any expression >0 = 1,
-    dimorph_df_bool = dimorph_df.mask(dimorph_df>0, other = 1)
+    df_bool = df.mask(df>0, other = 1)
     
-    return meta_data_df,dimorph_df,dimorph_df_bool
+    return meta_data_df,df,df_bool
 
-def cell_exclusion(threshold_m,threshold_g, df_bool, meta_data_df, df):
+def cell_exclusion(threshold_m,threshold_g, meta_data_df, df_bool, df, status_df):
     '''computes total molecules per cell and total genes per cell, 
     excludes cells below specified threshold_m (molecules) and threshold_g (genes), 
     and returns cell filtered gene expression dataframe and corresponding boolean representation'''
@@ -71,9 +71,10 @@ def cell_exclusion(threshold_m,threshold_g, df_bool, meta_data_df, df):
     #update meta_data_df
     meta_data_df_updated = meta_data_df.loc[:,df_updated.columns]
     print (f'Total cells reduced from {df.shape[1]} to {df_updated.shape[1]}')
-    return df_updated, df_bool_updated, meta_data_df_updated
+    status_df.loc['cell_exclusion (l1)',:] = True
+    return df_updated, df_bool_updated, meta_data_df_updated, status_df
 
-def gene_exclusion(num_cell_lwr_bound, percent_cell_upper_bound, df, df_bool, meta_data_df):
+def gene_exclusion(num_cell_lwr_bound, percent_cell_upper_bound, df, df_bool, meta_data_df, status_df):
     '''computes sum of each bool gene row and keeps only genes expressed in
     lwr_cell_bound < gene < upper_cell_bound. Returns gene filtered gene expression dataframe.'''
     #sum each row of l2 filtered boolean gene mask, get vector of dim (len(row genes)x1)
@@ -93,7 +94,8 @@ def gene_exclusion(num_cell_lwr_bound, percent_cell_upper_bound, df, df_bool, me
     #update meta_data_df
     meta_data_df_updated = meta_data_df.loc[:,df_updated.columns]
     print (f'Total genes reduced from {df.shape[0]} to {df_updated.shape[0]}')
-    return df_updated, df_bool_updated, meta_data_df_updated
+    status_df.loc['gene_exclusion (l1)',:] = True
+    return df_updated, df_bool_updated, meta_data_df_updated, status_df
 
 def avg_bool_gene_expression_by_sex(df_bool, meta_data_df, num_top_genes, plot_flag = 0):
     '''computes the mean of each gene (row) from bool expressed genes, isolated by sex, 
@@ -184,7 +186,7 @@ def analyze_cv(df,norm_scale_factor,num_top_genes,plot_flag, use_huber = False):
     
     return log_mucv_df_sorted
 
-def get_top_cv_genes(df, cv_df, plot_flag):
+def get_top_cv_genes(df, cv_df, plot_flag, status_df):
     '''takes output of analyze cv, the cv_df sorted from high to low of cv values to fit line,
     and determines top number of genes to select based on gene index of point closest to origin in knee plot'''
     delta = cv_df.loc[:,'delta_cv']
@@ -218,9 +220,10 @@ def get_top_cv_genes(df, cv_df, plot_flag):
         plt.show()
     #use gene index to update df accordingly
     updated_df = df.loc[cv_df.iloc[:gene_index,:].index,:]
-    return gene_index, updated_df
+    status_df.loc['get_top_cv_genes',:] = True
+    return gene_index, updated_df, status_df
 
-def log_and_standerdize_df(df):
+def log_and_standerdize_df(df, status_df):
     '''takes log and then performs standardization of gene expression matrix, returns np array'''
     df = np.log2(df+1)
     #transpose since standard scaler expects X as n_samples x n_features in order to compute mean/std along features axis
@@ -228,10 +231,10 @@ def log_and_standerdize_df(df):
     log_std_arr = std_scale.transform(df.T)
     print ('row mean after standardization: {:.2f}'.format(log_std_arr[:,0].mean()))
     print ('row sigma after standardization: {:.2f}'.format(log_std_arr[:,0].std()))
-    
-    return log_std_arr
+    status_df.loc['log_and_standerdize',:] = True
+    return log_std_arr,status_df
 
-def analyze_pca(arr, n_components, plot_flag):
+def analyze_pca(arr, n_components, plot_flag, status_df):
     '''performs pca on arr using n_components. plots PCA explained variance ratio as a function of components, 
     then plots a normalized version for both axes and uses closest point to origin to determine number of componets to keep'''
     pca = PCA(n_components).fit(arr)
@@ -283,10 +286,10 @@ def analyze_pca(arr, n_components, plot_flag):
                    s = 5)
         ax.set_title("First three PCA components")
         plt.show()
+    status_df.loc['analyze_pca',:] = True
+    return pca_index, arr_pca_indexed, status_df
 
-    return pca_index, arr_pca_indexed
-
-def get_perplexity(pca_arr, cutoff, plot_flag):
+def get_perplexity(pca_arr, cutoff, plot_flag, status_df):
     '''computes optimal perplexity param for use in do_tsne() using pairwise distance matrix. see comments in function for step by step details.'''
     #1) compute pairwise distance matrix (n_cells x n_cells) from PCA reduced matrix.
     D = squareform(pdist(pca_arr,metric='correlation'))
@@ -345,10 +348,10 @@ def get_perplexity(pca_arr, cutoff, plot_flag):
 
     #6) take median of list created in step 5, this is perplexity value
     perplexity = np.median(np.sort(xn_list))
-    
-    return perplexity
+    status_df.loc['get_perplexity',:] = True
+    return perplexity, status_df
 
-def do_tsne(arr,n_components, n_iter, learning_rate, early_exaggeration, init, perplexity):
+def do_tsne(arr,n_components, n_iter, learning_rate, early_exaggeration, init, perplexity, status_df):
     '''performs tsne on inputted arr with specified perplexity'''
     #prints relevant parameters (see https://www.nature.com/articles/s41467-019-13056-x)
     #note sklearn's learning rate is defined factor of 4 smaller than other implementations
@@ -375,3 +378,5 @@ def do_tsne(arr,n_components, n_iter, learning_rate, early_exaggeration, init, p
     ax, fig = plt.subplots()
     fig.scatter(X_tsne[:, 0], X_tsne[:, 1], s = 2)
     plt.show()
+    status_df.loc['do_tsne',:] = True
+    return X_tsne, status_df

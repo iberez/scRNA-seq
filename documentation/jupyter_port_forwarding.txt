@@ -9,10 +9,21 @@ https://ljvmiranda921.github.io/notebook/2018/01/31/running-a-jupyter-notebook/
 3) started server on remote machine with:
 jupyter notebook --no-browser --port=8889
 
-4) port forward via ssh with:
+4) port forward via ssh, on local machine:
 ssh -L 8888:localhost:8889 isaac@132.68.106.91
 
 5) in URL browser on local machine:
 localhost:8888
+
+** note if you get an error at step 4) saying 'port XXXX already in use', 
+use these commads:
+
+ss -plnt
+
+to find port XXXX
+
+then kill the process number that used the port
+
+sudo kill -9 pid 
 
 

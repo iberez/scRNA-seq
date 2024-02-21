@@ -247,7 +247,7 @@ def log_and_standerdize_df(df, status_df):
     status_df.loc['log_and_standerdize',:] = True
     return log_std_arr,status_df
 
-def analyze_pca(arr, n_components, plot_flag, status_df):
+def analyze_pca(arr, n_components, optimize_n, plot_flag, status_df):
     '''performs pca on arr using n_components. plots PCA explained variance ratio as a function of components, 
     then plots a normalized version for both axes and uses closest point to origin to determine number of componets to keep'''
     pca = PCA(n_components).fit(arr)
@@ -260,43 +260,47 @@ def analyze_pca(arr, n_components, plot_flag, status_df):
         plt.xlabel('component')
         #plt.xlim([0,15])
         plt.show()
-    #compute normalized variance ratio and component list
-    variance_ratio_n = (pca.explained_variance_ratio_ - np.min(pca.explained_variance_ratio_))/(np.max(pca.explained_variance_ratio_)-np.min(pca.explained_variance_ratio_))
-    max_component = arr.shape[1]
-    min_component = 1
-    component_list_n = ((np.arange(min_component, max_component+1)) - min_component)/(max_component - min_component)
-    #store normalized values into dataframe, compute euclidian distance from origin and insert
-    knee_df = pd.DataFrame({'component_list_n':component_list_n, 
-                        'explained_variance_ratio_n':variance_ratio_n})
-    x = [x for x in knee_df.loc[:,'component_list_n']]
-    y = [y for y in knee_df.loc[:,'explained_variance_ratio_n']]
-    d = [np.sqrt(x**2 + y**2) for x,y in zip(x,y)]
-    knee_df.insert(2, 'dist',d)
-    #sort by smallest distance, and extract corresponding index
-    knee_df.sort_values(by='dist', inplace=True)
-    if plot_flag == 1:
-        closest_point_to_origin = knee_df.iloc[0,:]
+    if optimize_n:
+        #compute normalized variance ratio and component list
+        variance_ratio_n = (pca.explained_variance_ratio_ - np.min(pca.explained_variance_ratio_))/(np.max(pca.explained_variance_ratio_)-np.min(pca.explained_variance_ratio_))
+        max_component = arr.shape[1]
+        min_component = 1
+        component_list_n = ((np.arange(min_component, max_component+1)) - min_component)/(max_component - min_component)
+        #store normalized values into dataframe, compute euclidian distance from origin and insert
+        knee_df = pd.DataFrame({'component_list_n':component_list_n, 
+                            'explained_variance_ratio_n':variance_ratio_n})
+        x = [x for x in knee_df.loc[:,'component_list_n']]
+        y = [y for y in knee_df.loc[:,'explained_variance_ratio_n']]
+        d = [np.sqrt(x**2 + y**2) for x,y in zip(x,y)]
+        knee_df.insert(2, 'dist',d)
+        #sort by smallest distance, and extract corresponding index
+        knee_df.sort_values(by='dist', inplace=True)
         pca_index = knee_df.index[0]
-        annotation_offset = 0.05
-        fig,ax = plt.subplots()
-        l = ax.scatter(component_list_n,variance_ratio_n, marker = '.')
-        cp = ax.scatter(closest_point_to_origin.iloc[0],closest_point_to_origin.iloc[1], c = 'r')
-        plt.annotate('closest point to origin' + '\n' + 'pca comp index = ' + str(pca_index), xy=(closest_point_to_origin.iloc[0],closest_point_to_origin.iloc[1]),
-                    xytext=(closest_point_to_origin.iloc[0]+annotation_offset,closest_point_to_origin.iloc[1]+annotation_offset),
-                    arrowprops=dict(facecolor='black', shrink=0.05),
-                    )
-        plt.xlabel('normalized component list')
-        plt.ylabel('normalized variance ratio')
-        plt.show()
-    #update arr to contain up to pca_index number of components
-    arr_pca_indexed = arr_pca[:,:pca_index]
-    if plot_flag == 1:
+        if plot_flag == 1:
+            closest_point_to_origin = knee_df.iloc[0,:]
+            annotation_offset = 0.05
+            fig,ax = plt.subplots()
+            l = ax.scatter(component_list_n,variance_ratio_n, marker = '.')
+            cp = ax.scatter(closest_point_to_origin.iloc[0],closest_point_to_origin.iloc[1], c = 'r')
+            plt.annotate('closest point to origin' + '\n' + 'pca comp index = ' + str(pca_index), xy=(closest_point_to_origin.iloc[0],closest_point_to_origin.iloc[1]),
+                        xytext=(closest_point_to_origin.iloc[0]+annotation_offset,closest_point_to_origin.iloc[1]+annotation_offset),
+                        arrowprops=dict(facecolor='black', shrink=0.05),
+                        )
+            plt.xlabel('normalized component list')
+            plt.ylabel('normalized variance ratio')
+            plt.show()
+        #update arr to contain up to pca_index number of components
+        arr_pca_indexed = arr_pca[:,:pca_index]
+    else:
+        pca_index = n_components
+        arr_pca_indexed = arr_pca
+    if plot_flag == 1 and n_components>=3:
         #visualize first three pca components
         fig, ax = plt.subplots(subplot_kw={"projection": "3d"})
         ax.scatter(arr_pca_indexed[:, 0], 
-                   arr_pca_indexed[:, 1], 
-                   arr_pca_indexed[:, 2], 
-                   s = 5)
+                arr_pca_indexed[:, 1], 
+                arr_pca_indexed[:, 2], 
+                s = 5)
         ax.set_title("First three PCA components")
         plt.show()
     status_df.loc['analyze_pca',:] = True

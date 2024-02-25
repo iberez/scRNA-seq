@@ -63,6 +63,18 @@ def load_data(metadata_file, bigdata_file):
     status_df = intialize_status_df()
     return meta_data_df,df,df_bool,status_df
 
+def find_knee(x,y):
+    '''given set of points x,y, find closest point to origin. Returns sorted df by ascending dist'''
+    knee_df = pd.DataFrame({'x':x, 
+                            'y':y})
+    x = [x for x in knee_df.loc[:,'x']]
+    y = [y for y in knee_df.loc[:,'y']]
+    d = [np.sqrt(x**2 + y**2) for x,y in zip(x,y)]
+    knee_df.insert(2, 'dist',d)
+    #sort by smallest distance, and extract corresponding index
+    knee_df.sort_values(by='dist', inplace=True)
+    return knee_df
+
 def cell_exclusion(threshold_m,threshold_g, meta_data_df, df_bool, df, status_df):
     '''computes total molecules per cell and total genes per cell, 
     excludes cells below specified threshold_m (molecules) and threshold_g (genes), 
@@ -209,14 +221,8 @@ def get_top_cv_genes(df, cv_df, plot_flag, status_df):
     #normalized by dividing by max value for each
     x_n = (x-np.min(x))/(np.max(x)-np.min(x))
     y_n = (y-np.min(y))/(np.max(y) - np.min(y))
-    #create new df to store values
-    knee_df = pd.DataFrame({'x_n':x_n,'y_n':y_n})
-    x = [x for x in knee_df.loc[:,'x_n']]
-    y = [y for y in knee_df.loc[:,'y_n']]
-    d = [np.sqrt(x**2 + y**2) for x,y in zip(x,y)]
-    knee_df.insert(2, 'dist',d)
-    #sort ascending by distance to origin and get index of closest point (first point)
-    knee_df.sort_values(by='dist', inplace=True)
+    # find closest point to origin
+    knee_df = find_knee(x_n,y_n)
     closest_point_to_origin = knee_df.iloc[0,:]
     gene_index = knee_df.index[0]
     if plot_flag==1:
@@ -266,15 +272,8 @@ def analyze_pca(arr, n_components, optimize_n, plot_flag, status_df):
         max_component = arr.shape[1]
         min_component = 1
         component_list_n = ((np.arange(min_component, max_component+1)) - min_component)/(max_component - min_component)
-        #store normalized values into dataframe, compute euclidian distance from origin and insert
-        knee_df = pd.DataFrame({'component_list_n':component_list_n, 
-                            'explained_variance_ratio_n':variance_ratio_n})
-        x = [x for x in knee_df.loc[:,'component_list_n']]
-        y = [y for y in knee_df.loc[:,'explained_variance_ratio_n']]
-        d = [np.sqrt(x**2 + y**2) for x,y in zip(x,y)]
-        knee_df.insert(2, 'dist',d)
-        #sort by smallest distance, and extract corresponding index
-        knee_df.sort_values(by='dist', inplace=True)
+        # find closest point to origin
+        knee_df = find_knee(component_list_n,variance_ratio_n)
         pca_index = knee_df.index[0]
         if plot_flag == 1:
             closest_point_to_origin = knee_df.iloc[0,:]

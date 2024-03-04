@@ -26,9 +26,15 @@ from mpl_toolkits.mplot3d import Axes3D
 from scipy.spatial.distance import pdist
 from scipy.spatial.distance import squareform
 from sklearn.manifold import TSNE
+from sklearn import metrics
+from sklearn.cluster import DBSCAN
+import seaborn as sns
+from sklearn.neighbors import NearestNeighbors
+from collections import Counter
+from sklearn.preprocessing import StandardScaler
 
 def create_meta_data_df(meta_data, df):
-    ''' creates a new meta data df with dim (# meta data features, e.g. serial number, x # cells from big data dataframe) '''
+    ''' creates a new meta data df with dim (# meta data features, e.g. serial number, x # cells from big data dataframe)'''
     meta_data_df = pd.DataFrame(index = meta_data.index, columns = df.columns)
     for i,v in enumerate(meta_data.keys()):
         if len(meta_data_df.columns[meta_data_df.columns.str.contains(meta_data.keys()[i])])>0:
@@ -37,7 +43,7 @@ def create_meta_data_df(meta_data, df):
     return meta_data_df
 
 def intialize_status_df():
-    '''create a status def dataframe for tracking completion of each function/processing step'''
+    '''create a status dataframe for tracking completion of each function/processing step'''
     steps = ['cell_exclusion (l1)',
          'gene_exclusion (l1)',
          'get_top_cv_genes',
@@ -50,7 +56,8 @@ def intialize_status_df():
     return status_df
 
 def load_data(metadata_file, bigdata_file):
-    ''' reads in metadata json, big data (gene expression) feather file, returns dataframe versions for each and a boolean version of the gene expression matrix'''
+    ''' reads in metadata json, big data (gene expression) feather file, returns dataframe versions for each, boolean version dataframe of the gene expression matrix,
+    and status dataframe'''
     meta_data = pd.read_json(metadata_file)
     df = pd.read_feather(bigdata_file)
     df.set_index('gene', inplace=True)
@@ -248,8 +255,8 @@ def log_and_standerdize_df(df, status_df):
     #transpose since standard scaler expects X as n_samples x n_features in order to compute mean/std along features axis
     std_scale = preprocessing.StandardScaler().fit(df.T)
     log_std_arr = std_scale.transform(df.T)
-    print ('row mean after standardization: {:.2f}'.format(log_std_arr[:,0].mean()))
-    print ('row sigma after standardization: {:.2f}'.format(log_std_arr[:,0].std()))
+    print ('column (gene) mean after standardization: {:.2f}'.format(log_std_arr[:,0].mean()))
+    print ('column (gene) sigma after standardization: {:.2f}'.format(log_std_arr[:,0].std()))
     status_df.loc['log_and_standerdize',:] = True
     return log_std_arr,status_df
 
@@ -386,9 +393,85 @@ def do_tsne(arr,n_components, n_iter, learning_rate, early_exaggeration, init, p
 
     # Apply t-SNE on the arr
     X_tsne = tsne.fit_transform(arr)
-    #visualizse tsne
+    #visualise tsne
     ax, fig = plt.subplots()
     fig.scatter(X_tsne[:, 0], X_tsne[:, 1], s = 2)
     plt.show()
     status_df.loc['do_tsne',:] = True
     return X_tsne, status_df
+
+def compute_eps(minpts, eps_prc, arr):
+    '''Amit's method for computing epsilon parameter used in dbscan:
+        1) compute distance matrix for input arr
+        2) sort columns by ascending values
+        3) determine knn_radius for each point in order to satisfy min_pts (get sorted row value @ row = minpts)
+        Parameters
+    ----------
+    minpts: int
+        The number of samples (or total weight) in a neighborhood for a point to be considered as a core point.
+    eps_prc: int
+        epsilon percintile
+    arr: numpy.ndarray
+        2D input array, typically output from tsne
+    Returns
+    -------
+    sorted_ind: 1-D array
+        indexes that order the matrix
+    '''
+    D = squareform(pdist(arr, metric='euclidean'))
+    D_sorted = np.sort(D, axis=0)
+    knn_rad = D_sorted[minpts,:]
+    epsilon = float(np.percentile(knn_rad, eps_prc))
+    print ('params for dbscan')
+    print ('minpts: ', minpts)
+    print ('epsilon: ', str(epsilon) + '\n')
+    return epsilon, minpts
+
+def do_dbscan(epsilon, minpts, arr):
+    ''' Do dbscan using scikit-learn implementation:
+    https://scikit-learn.org/stable/modules/generated/sklearn.cluster.DBSCAN.html
+        Parameters
+    ----------
+    epsilon:
+        The maximum distance between two samples for one to be considered as in the neighborhood of the other. 
+    minpts: int
+        The number of samples (or total weight) in a neighborhood for a point to be considered as a core point.
+    arr: numpy.ndarray
+        2D input array, typically output from tsne
+    Returns
+    -------
+    labels: 1-D array
+       Cluster labels for each point in the dataset given to fit(). Noisy samples are given the label -1.
+    n_clusters_: int
+        number of clusters (noise cluster removed)
+    '''
+    print (f"running dbscan with epsilon: {epsilon}  and minpts: {minpts}")
+    db = DBSCAN(eps=epsilon, min_samples=minpts).fit(arr)
+    labels = db.labels_
+
+    # Number of clusters in labels, ignoring noise if present.
+    n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+    n_noise_ = list(labels).count(-1)
+
+    print("Estimated number of clusters: %d" % n_clusters_)
+    print("Estimated number of noise points: %d" % n_noise_)
+    
+    arr_df = pd.DataFrame(arr, columns=['tsne-1','tsne-2'])
+    #remove noise were label = -1
+    arr_df_noise_rm = arr_df.drop(np.ravel(np.where(labels==-1)))
+    labels_noise_rm = (db.labels_[db.labels_!=-1])
+    
+    fig,ax = plt.subplots()
+    p = sns.scatterplot(data = arr_df_noise_rm,
+                        x = 'tsne-1',
+                        y= 'tsne-2',
+                        hue = labels_noise_rm, 
+                        legend = "full", 
+                        palette = "deep",
+                        s = 1)
+    #sns.move_legend(p, "upper right", bbox_to_anchor = (1.17, 1.), title = 'Clusters')
+    p.legend_.remove()
+    plt.title(f"Estimated number of clusters: {n_clusters_}, noise removed")
+    plt.show()
+    
+    return labels_noise_rm, n_clusters_, arr_df_noise_rm

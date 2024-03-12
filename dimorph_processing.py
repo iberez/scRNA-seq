@@ -470,6 +470,13 @@ def do_dbscan(epsilon, minpts, arr):
                         palette = "deep",
                         s = 1)
     #sns.move_legend(p, "upper right", bbox_to_anchor = (1.17, 1.), title = 'Clusters')
+    # Annotate with cluster labels at the median of each cluster
+    for label in set(labels_noise_rm):
+        if label != -1:
+            cluster_median = arr_df_noise_rm[labels_noise_rm == label].median()
+            ax.annotate(label, cluster_median, fontsize=8, color='black',
+                        ha='center', va='center', bbox=dict(boxstyle='round', alpha=0.2))
+    
     p.legend_.remove()
     plt.title(f"Estimated number of clusters: {n_clusters_}, noise removed")
     plt.show()

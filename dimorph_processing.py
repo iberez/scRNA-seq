@@ -32,6 +32,7 @@ import seaborn as sns
 from sklearn.neighbors import NearestNeighbors
 from collections import Counter
 from sklearn.preprocessing import StandardScaler
+from scipy.cluster.hierarchy import dendrogram, linkage
 
 def create_meta_data_df(meta_data, df):
     ''' creates a new meta data df with dim (# meta data features, e.g. serial number, x # cells from big data dataframe)'''
@@ -50,9 +51,12 @@ def intialize_status_df():
          'log_and_standerdize',
          'analyze_pca',
          'get_perplexity',
-         'do_tsne']
+         'do_tsne',
+         'compute_eps',
+         'do_dbscan']
     status_df = pd.DataFrame(columns =['completion_status'], 
                         index = steps)
+    
     return status_df
 
 def load_data(metadata_file, bigdata_file):
@@ -68,6 +72,7 @@ def load_data(metadata_file, bigdata_file):
     # create boolean version of the dataframe, where any expression >0 = 1,
     df_bool = df.mask(df>0, other = 1)
     status_df = intialize_status_df()
+    
     return meta_data_df,df,df_bool,status_df
 
 def find_knee(x,y):
@@ -80,6 +85,7 @@ def find_knee(x,y):
     knee_df.insert(2, 'dist',d)
     #sort by smallest distance, and extract corresponding index
     knee_df.sort_values(by='dist', inplace=True)
+    
     return knee_df
 
 def cell_exclusion(threshold_m,threshold_g, meta_data_df, df_bool, df, status_df):
@@ -104,6 +110,7 @@ def cell_exclusion(threshold_m,threshold_g, meta_data_df, df_bool, df, status_df
     meta_data_df_updated = meta_data_df.loc[:,df_updated.columns]
     print (f'Total cells reduced from {df.shape[1]} to {df_updated.shape[1]}')
     status_df.loc['cell_exclusion (l1)',:] = True
+    
     return df_updated, df_bool_updated, meta_data_df_updated, status_df
 
 def gene_exclusion(num_cell_lwr_bound, percent_cell_upper_bound, df, df_bool, meta_data_df, status_df):
@@ -127,6 +134,7 @@ def gene_exclusion(num_cell_lwr_bound, percent_cell_upper_bound, df, df_bool, me
     meta_data_df_updated = meta_data_df.loc[:,df_updated.columns]
     print (f'Total genes reduced from {df.shape[0]} to {df_updated.shape[0]}')
     status_df.loc['gene_exclusion (l1)',:] = True
+    
     return df_updated, df_bool_updated, meta_data_df_updated, status_df
 
 def avg_bool_gene_expression_by_sex(df_bool, meta_data_df, num_top_genes, plot_flag = 0):
@@ -138,8 +146,6 @@ def avg_bool_gene_expression_by_sex(df_bool, meta_data_df, num_top_genes, plot_f
     #print (f"avg bool expr m dim: {avg_bool_expr_m.shape}")
     #print (f"avg bool expr f dim: {avg_bool_expr_f.shape}")
     print (f"num m cells: {df_bool.loc[:,meta_data_df.loc['Sex',:] == 'M'].shape[1]} num f cells: {df_bool.loc[:,meta_data_df.loc['Sex',:] == 'F'].shape[1]}")
-    
-    
     #construct avg gene bool dataframe for male/female
     avg_bool_mf_df = pd.DataFrame({'m': avg_bool_expr_m, 'f': avg_bool_expr_f})
     #compute delta for each average and add to dataframe
@@ -247,17 +253,20 @@ def get_top_cv_genes(df, cv_df, plot_flag, status_df):
     #use gene index to update df accordingly
     updated_df = df.loc[cv_df.iloc[:gene_index,:].index,:]
     status_df.loc['get_top_cv_genes',:] = True
+    
     return gene_index, updated_df, status_df
 
-def log_and_standerdize_df(df, status_df):
+def log_and_standerdize_df(df, status_df, log=True):
     '''takes log and then performs standardization of gene expression matrix, returns np array'''
-    df = np.log2(df+1)
+    if log:
+        df = np.log2(df+1)
     #transpose since standard scaler expects X as n_samples x n_features in order to compute mean/std along features axis
     std_scale = preprocessing.StandardScaler().fit(df.T)
     log_std_arr = std_scale.transform(df.T)
     print ('column (gene) mean after standardization: {:.2f}'.format(log_std_arr[:,0].mean()))
     print ('column (gene) sigma after standardization: {:.2f}'.format(log_std_arr[:,0].std()))
     status_df.loc['log_and_standerdize',:] = True
+    
     return log_std_arr,status_df
 
 def analyze_pca(arr, n_components, optimize_n, plot_flag, status_df):
@@ -310,6 +319,7 @@ def analyze_pca(arr, n_components, optimize_n, plot_flag, status_df):
         ax.set_title("First three PCA components")
         plt.show()
     status_df.loc['analyze_pca',:] = True
+    
     return pca_index, arr_pca_indexed, status_df
 
 def get_perplexity(pca_arr, cutoff, plot_flag, status_df):
@@ -372,6 +382,7 @@ def get_perplexity(pca_arr, cutoff, plot_flag, status_df):
     #6) take median of list created in step 5, this is perplexity value
     perplexity = np.median(np.sort(xn_list))
     status_df.loc['get_perplexity',:] = True
+    
     return perplexity, status_df
 
 def do_tsne(arr,n_components, n_iter, learning_rate, early_exaggeration, init, perplexity, status_df):
@@ -398,9 +409,10 @@ def do_tsne(arr,n_components, n_iter, learning_rate, early_exaggeration, init, p
     fig.scatter(X_tsne[:, 0], X_tsne[:, 1], s = 2)
     plt.show()
     status_df.loc['do_tsne',:] = True
+    
     return X_tsne, status_df
 
-def compute_eps(minpts, eps_prc, arr):
+def compute_eps(minpts, eps_prc, arr, status_df):
     '''Amit's method for computing epsilon parameter used in dbscan:
         1) compute distance matrix for input arr
         2) sort columns by ascending values
@@ -425,9 +437,11 @@ def compute_eps(minpts, eps_prc, arr):
     print ('params for dbscan')
     print ('minpts: ', minpts)
     print ('epsilon: ', str(epsilon) + '\n')
-    return epsilon, minpts
+    status_df.loc['compute_eps',:] = True
+    
+    return epsilon, minpts, status_df
 
-def do_dbscan(epsilon, minpts, arr):
+def do_dbscan(epsilon, minpts, arr, status_df):
     ''' Do dbscan using scikit-learn implementation:
     https://scikit-learn.org/stable/modules/generated/sklearn.cluster.DBSCAN.html
         Parameters
@@ -480,5 +494,208 @@ def do_dbscan(epsilon, minpts, arr):
     p.legend_.remove()
     plt.title(f"Estimated number of clusters: {n_clusters_}, noise removed")
     plt.show()
+    status_df.loc['do_dbscan',:] = True
     
-    return labels_noise_rm, n_clusters_, arr_df_noise_rm
+    return labels_noise_rm, n_clusters_, arr_df_noise_rm, status_df
+
+def histogram_pts_per_cluster(labels, minpts):
+    '''Using labels output from DBSCAN, this function uses the counter method to 
+    plots histogram of points per cluster'''
+    cluster_pts = Counter(labels)
+    fig,ax = plt.subplots()
+    plt.bar(cluster_pts.keys(), cluster_pts.values())
+    plt.xlabel('unique cluster')
+    plt.ylabel('num pts (cells)')
+    #plt.ylim([0,100])
+    plt.axhline(y = minpts, color = 'r', linestyle = 'dashed', label = 'min_pts')
+    plt.legend()
+    plt.show()
+
+def sort_by_cluster_label(df,meta_data_df,arr_df,labels):
+    '''
+    Sorts metadata and gene_expression data by cluster labels returned from do_dbscan in ascending order.
+        Parameters
+    ----------
+    df: pandas.core.frame.DataFrame
+        gene expression dataframe 
+    meta_data_df: pandas.core.frame.DataFrame
+        gene expression metadata
+    arr_df: pandas.core.frame.DataFrame
+        2D input array, typically output from tsne, in dataframe format
+    Returns
+    -------
+    df_updated:
+        reshuffled df orderded by ascending cluster label
+    meta_data_df_updated:
+        updated/reordered meta data with added labels row
+    '''
+    arr_df = arr_df.insert(2, 'labels',labels)
+    arr_df_sorted = arr_df.sort_values(by = 'labels')
+    unique_labels = np.unique(labels) 
+    #Sort meta data using arr_df_sorted index, then add cluster labels row
+    meta_data_df  = meta_data_df.iloc[:,arr_df_sorted.index]
+    cluster_labels = pd.DataFrame([list(arr_df_sorted['labels'])], columns=meta_data_df.columns, index = ['cluster_label'])
+    # append new line to dataframe
+    meta_data_df = pd.concat([meta_data_df, cluster_labels])
+    #sort df using arr_df_sorted
+    df_updated = pd.DataFrame(data = df.T, index=df.T.index, columns=df.T.columns)
+    df_updated = df_updated.iloc[arr_df_sorted.index,:]
+    
+    return df_updated, meta_data_df, unique_labels
+
+def inter_cluster_sort(df, meta_data_df, unique_labels, n_components):
+    '''
+    Returns inter cluster sorted df and metadata, order determined as follows:
+    1) compute mean per gene per cluster(n_genes x n_clusters)
+    2) PCA reduce genes to n_components (10)
+    3) Compute distance matrix on PCA reduced array using 'correlation' as distance metric
+    4) Compute linkage on distance matrix using 'ward' linkage alg to determine cluster order
+    '''
+    #transpose since we PCA reduce on genes 
+    df = df.T
+    #compute mean for each gene, for each cluster
+    mean_per_gene_per_cluster_arr = np.zeros((len(df.index),len(unique_labels)))
+    for i in range(len(unique_labels)):
+        cluster_mean_expr = np.mean(df.loc[:,meta_data_df.loc['cluster_label',:] == i], axis = 1)
+        mean_per_gene_per_cluster_arr[:,i] = cluster_mean_expr
+    #do pca
+    pca = PCA(n_components).fit(mean_per_gene_per_cluster_arr.T)
+    mpg_pc_pca = pca.transform(mean_per_gene_per_cluster_arr.T)
+    #Compute condensed distance matrix
+    D_cond = pdist(mpg_pc_pca, metric='correlation')
+    #do linkage
+    Z = linkage(D_cond, 'ward')
+    fig = plt.figure()
+    dn = dendrogram(Z)
+    plt.show()
+    #get linkage order
+    linkage_cluster_order = dn['leaves']
+    #build new df using linkage order
+    df_post_linkage = pd.DataFrame(index = df.index, columns = [])
+    for i,v in enumerate(linkage_cluster_order):
+        #print (df.iloc[:,np.where(meta_data_df.loc['cluster_label',:] == v)[0]])
+        tmp = df.iloc[:,np.where(meta_data_df.loc['cluster_label',:] == v)[0]]
+        df_post_linkage = pd.concat([df_post_linkage, tmp],axis = 1)
+    #update metadata
+    meta_data_df = meta_data_df.reindex(columns = df_post_linkage.columns)
+    
+    return df_post_linkage, meta_data_df, linkage_cluster_order
+
+def intra_cluster_sort(df, meta_data_df, linkage_cluster_order):
+    '''
+    return intra cluster sorted df, meta_data_df. Function performs intra cluster sorting by taking 1D tsne for each cluster, then resorting
+    by ascending value.
+    '''
+    df_post_linkage_intra_sorted = pd.DataFrame(index = df.index, columns = [])
+    cluster_indices = []
+    for c in linkage_cluster_order:
+        x = df.iloc[:,np.where(meta_data_df.loc['cluster_label',:] == c)[0]]
+        x_col = x.columns.to_list()
+        x_arr = x.to_numpy()
+        #perform tsne to reduce to 1D
+        tsne = TSNE(n_components=1, perplexity=30)
+        # Apply t-SNE to reduce to 1 feature x num_cells. end up with a 1D vector for each unique label. 
+        X_tsne = tsne.fit_transform(x_arr.T)
+        #create temp dataframe of x_col and 1D tsne
+        tmp_df = pd.DataFrame({'x_col':x_col})
+        tmp_df['X_tsne'] = X_tsne.tolist()
+        #sort by ascending 1D tsne values
+        tmp_df_sorted = tmp_df.sort_values(by = 'X_tsne')
+        cluster_indices.append(np.array(tmp_df_sorted.index))
+        #use index of tmp_df_sorted to reshuffle intra cluster
+        x_intra_sorted = x.reindex(columns = tmp_df_sorted['x_col'])
+        df_post_linkage_intra_sorted = pd.concat([df_post_linkage_intra_sorted,x_intra_sorted], axis = 1)
+    #update metadata
+    meta_data_df = meta_data_df.reindex(columns = df_post_linkage_intra_sorted.columns)
+    
+    return df_post_linkage_intra_sorted, meta_data_df, cluster_indices
+
+def compute_marker_genes(df, meta_data_df, cluster_indices, linkage_cluster_order, n_markers):
+    #store avg index for each cluster (used for plutting cluster label ticks), and set pointer to 0
+    tmp = 0
+    pos = [] 
+    #initialize array to store cluster_expr_ratio to store ratio of mean gene_expression per cluster/mean gene expression across all cells
+    cluster_expr_ratios = np.zeros((len(df.index),len(cluster_indices))) 
+    #compute mean per gene across all cells
+    mean_per_gene = np.mean(df.loc[:,:], axis=1)
+    #initialize array to store mean of all postively expressed cells
+    cluster_mean_pos = np.zeros((len(df.index),len(cluster_indices))) #intialize for mean of all postive cells
+    #create dataframe where 1 = postive expression of cell
+    arr_pos_bin = np.array(df>0).astype(int) #create array of same dim, setting all positive values to 1, otherwise 0
+    df_pos = pd.DataFrame(arr_pos_bin, index = df.index, columns = df.columns)
+
+    for idx, c in enumerate(zip(linkage_cluster_order,cluster_indices)):
+        #append mean of cell indices btwn tmp and tmp + length of cluster
+        pos.append(np.mean(np.arange(tmp,tmp+len(c[1]))))
+        #update pointer
+        tmp+=len(c[1])
+        #compute mean expression for each cluster in linkage cluster order
+        cluster_mean_expr = np.mean(df.loc[:,meta_data_df.loc['cluster_label',:] == c[0]], axis = 1)
+        #store in arr
+        cluster_expr_ratios[:,idx] = cluster_mean_expr/mean_per_gene
+        #compute mean of postive expressed cells
+        cluster_mean_p = np.mean(df_pos.loc[:,meta_data_df.loc['cluster_label',:] == c[0]], axis = 1)
+        #store in arr
+        cluster_mean_pos[:,idx] = cluster_mean_p
+        
+    #set any cluster mean pos <0.2 to 0
+    cluster_mean_pos[cluster_mean_pos<0.2] = 0
+    
+    #compute gene index arrays for three different weights, slice off n_markers number of rows from top
+    xi0 = np.multiply(cluster_expr_ratios, (cluster_mean_pos**0.001))
+    xi0_df = pd.DataFrame(data = xi0, index = df.index)
+    xi0_ind_arr = np.column_stack((xi0_df.iloc[:,i].sort_values(ascending=False).index for i in range(len(xi0_df.columns))))
+    xi0_ind_arr = xi0_ind_arr[:n_markers,:]
+
+    xi0p5 = np.multiply(cluster_expr_ratios, (cluster_mean_pos**0.5))
+    xi0p5_df = pd.DataFrame(data = xi0p5, index = df.index)
+    xi0p5_ind_arr = np.column_stack((xi0p5_df.iloc[:,i].sort_values(ascending=False).index for i in range(len(xi0p5_df.columns))))
+    xi0p5_ind_arr = xi0p5_ind_arr[:n_markers,:]
+
+    xi1 = np.multiply(cluster_expr_ratios, (cluster_mean_pos**1))
+    xi1_df = pd.DataFrame(data = xi1, index = df.index)
+    xi1_ind_arr = np.column_stack((xi1_df.iloc[:,i].sort_values(ascending=False).index for i in range(len(xi1_df.columns))))
+    xi1_ind_arr = xi1_ind_arr[:n_markers,:]
+
+    #vertically stack the gene index arrays
+    stack = np.vstack((xi0_ind_arr,xi0p5_ind_arr,xi1_ind_arr))
+    #flatten to 1D vector
+    #By default, flatten() uses row major order, use 'F' to change to column major, since columns correspond to each cluster
+    smash = stack.flatten('F')
+
+    #get unique marker genes, preserving order
+    marker_genes, idx = np.unique(smash, return_index=True)
+    marker_genes_sorted = marker_genes[np.argsort(idx)]
+    #print (f'len marker_Genes_sorted {len(marker_genes_sorted)}')
+    
+    #NEW########
+    df_marker = df.loc[marker_genes_sorted,:]
+    mean_per_gene_marker = np.mean(df_marker.loc[:,:], axis=1)
+    arr_marker_pos_bin = np.array(df_marker>0).astype(int) #create array of same dim, setting all positive values to 1, otherwise 0
+    df_marker_pos = pd.DataFrame(arr_marker_pos_bin, index = df_marker.index, columns = df_marker.columns)
+    #initialize expr rations and mean pos again for just marker genes
+    cluster_expr_ratios_marker = np.zeros((len(marker_genes_sorted),len(cluster_indices))) 
+    cluster_mean_pos_marker = np.zeros((len(marker_genes_sorted),len(cluster_indices))) #intialize for mean of all postive cells
+    
+    #add additional looping over sorted markers
+    for idx, c in enumerate(zip(linkage_cluster_order,cluster_indices)):
+        #compute mean expression for each cluster in linkage cluster order
+        cluster_mean_expr_marker = np.mean(df_marker.loc[:,meta_data_df.loc['cluster_label',:] == c[0]], axis = 1)
+        #store in arr
+        cluster_expr_ratios_marker[:,idx] = cluster_mean_expr_marker/mean_per_gene_marker
+        #compute mean of postive expressed cells
+        cluster_mean_p_marker = np.mean(df_marker_pos.loc[:,meta_data_df.loc['cluster_label',:] == c[0]], axis = 1)
+        #store in arr
+        cluster_mean_pos_marker[:,idx] = cluster_mean_p_marker
+    
+    xi0p5_marker = np.multiply(cluster_expr_ratios_marker, (cluster_mean_pos_marker**0.5))
+    #for each row, get index of max column value
+    ind = np.argmax(xi0p5_marker, axis=1)
+    #get indices of sorted list
+    ind_s = np.argsort(ind)
+    print (ind_s)
+    #reorder marker genes accordingly
+    marker_genes_sorted_final = [marker_genes_sorted[i] for i in ind_s]
+    print (f'len marker_genes_sorted_final {len(marker_genes_sorted_final)}')
+    
+    return marker_genes_sorted_final, pos

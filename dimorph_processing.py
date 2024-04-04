@@ -32,7 +32,7 @@ import seaborn as sns
 from sklearn.neighbors import NearestNeighbors
 from collections import Counter
 from sklearn.preprocessing import StandardScaler
-from scipy.cluster.hierarchy import dendrogram, linkage
+from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, leaves_list
 
 def create_meta_data_df(meta_data, df):
     ''' creates a new meta data df with dim (# meta data features, e.g. serial number, x # cells from big data dataframe)'''
@@ -529,7 +529,7 @@ def sort_by_cluster_label(df,meta_data_df,arr_df,labels):
     meta_data_df_updated:
         updated/reordered meta data with added labels row
     '''
-    arr_df = arr_df.insert(2, 'labels',labels)
+    #arr_df = arr_df.insert(2, 'labels',labels)
     arr_df_sorted = arr_df.sort_values(by = 'labels')
     unique_labels = np.unique(labels) 
     #Sort meta data using arr_df_sorted index, then add cluster labels row
@@ -543,7 +543,7 @@ def sort_by_cluster_label(df,meta_data_df,arr_df,labels):
     
     return df_updated, meta_data_df, unique_labels
 
-def inter_cluster_sort(df, meta_data_df, unique_labels, n_components):
+def inter_cluster_sort(df, meta_data_df, unique_labels, n_components, linkage_alg, dist_metric):
     '''
     Returns inter cluster sorted df and metadata, order determined as follows:
     1) compute mean per gene per cluster(n_genes x n_clusters)
@@ -564,22 +564,34 @@ def inter_cluster_sort(df, meta_data_df, unique_labels, n_components):
     #Compute condensed distance matrix
     D_cond = pdist(mpg_pc_pca, metric='correlation')
     #do linkage
-    Z = linkage(D_cond, 'ward')
+    #31.03.24 - can enable optimal ordering with linkage(, , optimal_ordering = True)
+    #31.03.24, try doing linkage on mpg_pc_pca (prj in Amits code), then get optimal order after 
+    Z = linkage(mpg_pc_pca, linkage_alg, metric= dist_metric)
     fig = plt.figure()
+    plt.title('Raw Linkage: ' + linkage_alg + '_' + dist_metric)
     dn = dendrogram(Z)
     plt.show()
     #get linkage order
-    linkage_cluster_order = dn['leaves']
+    #linkage_cluster_order = dn['leaves']
+    linkage_cluster_order = leaves_list(optimal_leaf_ordering(Z,D_cond))
+    Z_ordered = optimal_leaf_ordering(Z,D_cond)
+    print (linkage_cluster_order)
+    
+    fig = plt.figure()
+    plt.title('Optimal Leaf Ordered Linkage: ' + linkage_alg + '_' + dist_metric)
+    dn = dendrogram(Z_ordered)
+    plt.show()
     #build new df using linkage order
     df_post_linkage = pd.DataFrame(index = df.index, columns = [])
     for i,v in enumerate(linkage_cluster_order):
+        #print(meta_data_df.loc['cluster_label',meta_data_df.loc['cluster_label',:] == v])
         #print (df.iloc[:,np.where(meta_data_df.loc['cluster_label',:] == v)[0]])
         tmp = df.iloc[:,np.where(meta_data_df.loc['cluster_label',:] == v)[0]]
         df_post_linkage = pd.concat([df_post_linkage, tmp],axis = 1)
     #update metadata
     meta_data_df = meta_data_df.reindex(columns = df_post_linkage.columns)
     
-    return df_post_linkage, meta_data_df, linkage_cluster_order
+    return df_post_linkage, meta_data_df, linkage_cluster_order, Z_ordered, mean_per_gene_per_cluster_arr
 
 def intra_cluster_sort(df, meta_data_df, linkage_cluster_order):
     '''
@@ -668,6 +680,7 @@ def compute_marker_genes(df, meta_data_df, cluster_indices, linkage_cluster_orde
     marker_genes_sorted = marker_genes[np.argsort(idx)]
     #print (f'len marker_Genes_sorted {len(marker_genes_sorted)}')
     
+    
     #NEW########
     df_marker = df.loc[marker_genes_sorted,:]
     mean_per_gene_marker = np.mean(df_marker.loc[:,:], axis=1)
@@ -691,11 +704,12 @@ def compute_marker_genes(df, meta_data_df, cluster_indices, linkage_cluster_orde
     xi0p5_marker = np.multiply(cluster_expr_ratios_marker, (cluster_mean_pos_marker**0.5))
     #for each row, get index of max column value
     ind = np.argmax(xi0p5_marker, axis=1)
+    print (ind)
     #get indices of sorted list
     ind_s = np.argsort(ind)
     print (ind_s)
     #reorder marker genes accordingly
     marker_genes_sorted_final = [marker_genes_sorted[i] for i in ind_s]
     print (f'len marker_genes_sorted_final {len(marker_genes_sorted_final)}')
-    
-    return marker_genes_sorted_final, pos
+
+    return marker_genes_sorted_final, pos, ind, ind_s, marker_genes_sorted

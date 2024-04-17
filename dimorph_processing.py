@@ -529,7 +529,9 @@ def sort_by_cluster_label(df,meta_data_df,arr_df,labels):
     meta_data_df_updated:
         updated/reordered meta data with added labels row
     '''
-    #arr_df = arr_df.insert(2, 'labels',labels)
+    #pandas bug 'nonetype .sort values' sometimes requires commenting out line 533 since the labels are already added
+    #, and then just running function again...
+    arr_df = arr_df.insert(2, 'labels',labels)
     arr_df_sorted = arr_df.sort_values(by = 'labels')
     unique_labels = np.unique(labels) 
     #Sort meta data using arr_df_sorted index, then add cluster labels row
@@ -572,7 +574,7 @@ def inter_cluster_sort(df, meta_data_df, unique_labels, n_components, linkage_al
     dn = dendrogram(Z)
     plt.show()
     #get linkage order
-    #linkage_cluster_order = dn['leaves']
+    linkage_cluster_order_po = dn['leaves']
     linkage_cluster_order = leaves_list(optimal_leaf_ordering(Z,D_cond))
     Z_ordered = optimal_leaf_ordering(Z,D_cond)
     print (linkage_cluster_order)
@@ -591,7 +593,7 @@ def inter_cluster_sort(df, meta_data_df, unique_labels, n_components, linkage_al
     #update metadata
     meta_data_df = meta_data_df.reindex(columns = df_post_linkage.columns)
     
-    return df_post_linkage, meta_data_df, linkage_cluster_order, Z_ordered, mean_per_gene_per_cluster_arr
+    return df_post_linkage, meta_data_df, linkage_cluster_order, Z_ordered, mean_per_gene_per_cluster_arr, linkage_cluster_order_po
 
 def intra_cluster_sort(df, meta_data_df, linkage_cluster_order):
     '''
@@ -605,7 +607,8 @@ def intra_cluster_sort(df, meta_data_df, linkage_cluster_order):
         x_col = x.columns.to_list()
         x_arr = x.to_numpy()
         #perform tsne to reduce to 1D
-        tsne = TSNE(n_components=1, perplexity=30)
+        #changed perplexity from 30 to 15 after harmony integration
+        tsne = TSNE(n_components=1, perplexity=15)
         # Apply t-SNE to reduce to 1 feature x num_cells. end up with a 1D vector for each unique label. 
         X_tsne = tsne.fit_transform(x_arr.T)
         #create temp dataframe of x_col and 1D tsne

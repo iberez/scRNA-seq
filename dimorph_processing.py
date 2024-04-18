@@ -539,8 +539,9 @@ def sort_by_cluster_label(df,meta_data_df,arr_df,labels):
     cluster_labels = pd.DataFrame([list(arr_df_sorted['labels'])], columns=meta_data_df.columns, index = ['cluster_label'])
     # append new line to dataframe
     meta_data_df = pd.concat([meta_data_df, cluster_labels])
-    #sort df using arr_df_sorted
+    #tranpose to have features as columns
     df_updated = pd.DataFrame(data = df.T, index=df.T.index, columns=df.T.columns)
+    #sort df using arr_df_sorted index
     df_updated = df_updated.iloc[arr_df_sorted.index,:]
     
     return df_updated, meta_data_df, unique_labels

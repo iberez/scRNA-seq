@@ -33,6 +33,8 @@ from sklearn.neighbors import NearestNeighbors
 from collections import Counter
 from sklearn.preprocessing import StandardScaler
 from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, leaves_list
+import harmonypy as hm
+from matplotlib.cm import ScalarMappable
 
 def create_meta_data_df(meta_data, df):
     ''' creates a new meta data df with dim (# meta data features, e.g. serial number, x # cells from big data dataframe)'''
@@ -717,3 +719,232 @@ def compute_marker_genes(df, meta_data_df, cluster_indices, linkage_cluster_orde
     print (f'len marker_genes_sorted_final {len(marker_genes_sorted_final)}')
 
     return marker_genes_sorted_final, pos, ind, ind_s, marker_genes_sorted
+
+def compute_marker_means(GABA_marker, 
+                         Vglut1_marker, 
+                         Vglut2_marker, 
+                         exclude_markers_updated,
+                         df_marker,
+                         meta_data_df,
+                         linkage_cluster_order):
+    
+    #dictionary mapping flag to class type
+    flag_dict = {1:'GABA', 2:'Vglut1', 3:'Vglut2', 4:'Nonneuronal' , 5:'Doublet'}
+    
+    #initialize flag vector to store flags correspondings class type for each cluster
+    gabaglut = np.zeros((1,len(linkage_cluster_order)))[0]
+    
+    #intialize empty cell class dataframe to be added to meta data, indicating class type for each cell
+    cell_class = pd.DataFrame(columns=meta_data_df.columns, index = ['cell_class'])
+    
+    #initialize lists to store mean of each marker within each cluster
+    mu_g = []
+    mu_vg1 = []
+    mu_vg2 = []
+    mu_nn = []
+
+    #std dev of mean of each marker within each cluster
+    std_g = []
+    std_vg1 = []
+    std_vg2 = []
+    std_nn = []
+
+    #loop through each cluster
+    for i,c in enumerate(linkage_cluster_order):
+        #extract expression data of cluster c
+        tmp = df_marker.iloc[:,np.where(meta_data_df.loc['cluster_label']==c)[0]]
+        #get row means for markers within cluster
+        GABA_marker_mean = np.mean(tmp.loc[GABA_marker,:])
+        Vglut1_marker_mean = np.mean(tmp.loc[Vglut1_marker,:])
+        Vglut2_marker_mean = np.mean(tmp.loc[Vglut2_marker,:])
+        nonneuro_mean = np.mean(tmp.loc[exclude_markers_updated,:])
+
+        #get row stds for markers within cluster
+        GABA_marker_std = np.std(tmp.loc[GABA_marker,:], axis=0)
+        Vglut1_marker_std = np.std(tmp.loc[Vglut1_marker,:], axis=0)
+        Vglut2_marker_std = np.std(tmp.loc[Vglut2_marker,:], axis=0)
+        nonneuro_std = np.std(tmp.loc[exclude_markers_updated,:], axis=0)
+
+        #append mean to respective list
+        mu_g.append(GABA_marker_mean)
+        mu_vg1.append(Vglut1_marker_mean)
+        mu_vg2.append(Vglut2_marker_mean)
+        mu_nn.append(nonneuro_mean)
+
+        #append std to respective list
+        std_g.append(GABA_marker_std)
+        std_vg1.append(Vglut1_marker_std)
+        std_vg2.append(Vglut2_marker_std)
+        std_nn.append(nonneuro_std)    
+
+        #sort means descending
+        marker_means = np.flip(np.sort(np.array([GABA_marker_mean,
+                                                 Vglut1_marker_mean,
+                                                 Vglut2_marker_mean,
+                                                 nonneuro_mean])))
+        #print (marker_means)
+
+        #classify cluster based on greatest mean, adding flag to gabaglut, and corresponding class type to cell_class
+        if marker_means[0]>2*marker_means[1]:
+            if marker_means[0] == GABA_marker_mean:
+                #print ('gaba', GABA_marker_mean)
+                gabaglut[i] = 1
+                cell_class.iloc[:,np.where(meta_data_df.loc['cluster_label']==c)[0]] = flag_dict[1]
+            if marker_means[0] == Vglut1_marker_mean:
+                #print ('vglut1', Vglut1_marker_mean)
+                gabaglut[i] = 2
+                cell_class.iloc[:,np.where(meta_data_df.loc['cluster_label']==c)[0]] = flag_dict[2]
+            if marker_means[0] == Vglut2_marker_mean:
+                #print ('vglut2', Vglut2_marker_mean)
+                gabaglut[i] = 3
+                cell_class.iloc[:,np.where(meta_data_df.loc['cluster_label']==c)[0]] = flag_dict[3]
+            if marker_means[0] == nonneuro_mean:
+                #print ('nonneuro', nonneuro_mean)
+                gabaglut[i] = 4
+                cell_class.iloc[:,np.where(meta_data_df.loc['cluster_label']==c)[0]] = flag_dict[4]
+        #if first mean is not at least 2x second mean in descending list, flag clustter as doublet
+        #note factor of two is arbitrary...
+        else:
+            gabaglut[i] = 5
+            cell_class.iloc[:,np.where(meta_data_df.loc['cluster_label']==c)[0]] = flag_dict[5]
+        #print (tmp.shape)
+        
+    #use flag dict to convert flag vector to list of class type
+    gabaglut_l = [flag_dict[i] for i in gabaglut]
+
+    # create another dictionary mapping cluster label to class type
+    label_to_class_map = dict(zip(linkage_cluster_order, gabaglut_l))
+
+    #append cell class to metadata
+    meta_data_df = pd.concat([meta_data_df, cell_class])
+    
+    return mu_g, mu_vg1, mu_vg2, mu_nn, std_g, std_vg1,std_vg2,std_nn, label_to_class_map, meta_data_df
+
+def plot_cell_class(arr_df_class,arr_xy,labels):
+    fig,ax = plt.subplots(figsize = (9,6))
+    for n, grp in arr_df_class.groupby('cell_class'):
+        ax.scatter(x = 'tsne-1',y = 'tsne-2', data=grp, label=n, s = 1)
+    lgnd = ax.legend()
+    for handle in lgnd.legend_handles:
+        handle.set_sizes([10.0])
+
+    for label in set(labels):
+        if label != -1:
+            cluster_median = arr_xy[labels == label].median()
+            #print (cluster_median)
+            ax.annotate(text = label, xy=cluster_median, fontsize=8, color='black',
+                        ha='center', va='center', bbox=dict(boxstyle='round', alpha=0.2))
+
+    plt.xticks([])
+    plt.yticks([])
+
+    plt.show()  
+
+def plot_marker_means(mu_g,mu_vg1,mu_vg2,mu_nn,linkage_cluster_order):
+    fig,ax = plt.subplots(figsize = (9,6))
+
+    x = linkage_cluster_order
+    xt =  np.arange(len(linkage_cluster_order))
+    plt.bar(xt-0.3,mu_g, width=0.2, color = 'orange', label = 'mu_gaba')
+    plt.bar(xt-.1, mu_vg1, width=0.2,color = 'red', label = 'mu_vglut1')
+    plt.bar(xt+0.1, mu_vg2, width = 0.2, color = 'purple', label = 'mu_vglut2')
+    plt.bar(xt+0.3, mu_nn, width = 0.2, color = 'green', label = 'mu_nn')
+    plt.legend()
+    plt.xlabel('cluster label')
+    plt.ylabel('mean expression')
+    plt.xticks(ticks = np.arange(len(linkage_cluster_order)),labels=linkage_cluster_order)
+    plt.show()
+
+def plot_marker_mean_std(marker, mu_,std_, linkage_cluster_order):
+    fig,ax = plt.subplots(figsize = (9,6))
+
+    x = linkage_cluster_order
+    xt =  np.arange(len(linkage_cluster_order))
+    plt.bar(xt-0.3,mu_, width=0.2, color = 'orange', label = marker)
+    plt.errorbar(xt-0.3,mu_, yerr=std_, fmt="o", color="r")
+
+    plt.legend()
+    plt.xlabel('cluster label')
+    plt.ylabel('mean expression w/ std dev')
+    plt.xticks(ticks = np.arange(len(linkage_cluster_order)),labels=linkage_cluster_order)
+    plt.show()
+
+def plot_marker_on_tsne(tsne_df,expr_df,marker_name, nn=False):
+    
+    x = np.array(tsne_df['tsne-1'])
+    y = np.array(tsne_df['tsne-2'])
+    if nn==False:
+        #not non-neuronal
+        z = np.array(expr_df.loc[marker_name,:])
+        fig, ax = plt.subplots( figsize = (9,6))
+        scatter = ax.scatter(x, y, c = z , cmap = 'Greens' , s = 1)
+        # Create colorbar
+        sm = ScalarMappable(cmap='Greens')
+        sm.set_array(z)
+        cbar = fig.colorbar(sm)
+        cbar.set_label('Expr')
+        plt.title('Log/Standerdized '+ marker_name + ' Expression')
+
+    else:
+        #non-neuronal
+        z = marker_name
+        fig, ax = plt.subplots( figsize = (9,6))
+        scatter = ax.scatter(x, y, c = z , cmap = 'Greens' , s = 1)
+        # Create colorbar
+        sm = ScalarMappable(cmap='Greens')
+        sm.set_array(z)
+        cbar = fig.colorbar(sm)
+        cbar.set_label('Expr')
+        plt.title('Log/Standerdized Nonneuronal Expression (Summed Exclude Markers)')
+
+    plt.xticks([])
+    plt.yticks([])
+
+    plt.show()
+
+def plot_all_markers(tsne_df, arr_xy, expr_df,GABA_marker, Vglut1_marker, Vglut2_marker, nonneuro, labels, label_clusters = False):
+    x = np.array(tsne_df['tsne-1'])
+    y = np.array(tsne_df['tsne-2'])
+    z_gaba = np.array(expr_df.loc[GABA_marker,:])
+    z_vglut1 = np.array(expr_df.loc[Vglut1_marker,:])
+    z_vglut2 = np.array(expr_df.loc[Vglut2_marker,:])
+    z_nn = nonneuro
+
+
+    fig, ax = plt.subplots(2,2, figsize = (9,6))
+
+    scatter = ax[0,0].scatter(x, y, c = z_gaba , cmap = 'seismic' , s = .1)
+    scatter = ax[0,1].scatter(x, y, c = z_vglut1 , cmap = 'seismic' , s = .1)
+    scatter = ax[-1,0].scatter(x, y, c = z_vglut2 , cmap = 'seismic' , s = .1)
+    scatter = ax[-1,1].scatter(x, y, c = z_nn , cmap = 'seismic' , s = .1)
+
+    # Add titles to subplots with italic text
+    ax[0, 0].set_title(GABA_marker, fontstyle='italic')
+    ax[0, 1].set_title(Vglut1_marker, fontstyle='italic')
+    ax[-1, 0].set_title(Vglut2_marker, fontstyle='italic')
+    ax[-1, 1].set_title('Nonneuronal', fontstyle='italic')
+
+    if label_clusters:
+        for label in set(labels):
+            if label != -1:
+                cluster_median = arr_xy[labels == label].median()
+                #print (cluster_median)
+                ax[0, 0].annotate(text = label, xy=cluster_median, fontsize=8, color='black',
+                            ha='center', va='center', bbox=dict(boxstyle='round', alpha=0.2))  
+                ax[0, 1].annotate(text = label, xy=cluster_median, fontsize=8, color='black',
+                            ha='center', va='center', bbox=dict(boxstyle='round', alpha=0.2))  
+                ax[-1, 0].annotate(text = label, xy=cluster_median, fontsize=8, color='black',
+                            ha='center', va='center', bbox=dict(boxstyle='round', alpha=0.2))  
+                ax[-1, 1].annotate(text = label, xy=cluster_median, fontsize=8, color='black',
+                            ha='center', va='center', bbox=dict(boxstyle='round', alpha=0.2))          
+
+
+    # Remove x and y ticks from all subplots
+    for ax_row in ax:
+        for axis in ax_row:
+            axis.set_xticks([])
+            axis.set_yticks([])
+
+    plt.tight_layout()
+    #plt.savefig('./marker_expression_200424.png')
+    plt.show()

@@ -35,6 +35,9 @@ from sklearn.preprocessing import StandardScaler
 from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, leaves_list
 import harmonypy as hm
 from matplotlib.cm import ScalarMappable
+from datetime import date
+
+today = str(date.today())
 
 def create_meta_data_df(meta_data, df):
     ''' creates a new meta data df with dim (# meta data features, e.g. serial number, x # cells from big data dataframe)'''
@@ -185,12 +188,18 @@ def analyze_cv(df,norm_scale_factor,num_top_genes,plot_flag, use_huber = False):
     df_n = df.div(column_sums)
     #scale by norm_scale_factor
     df_n = df_n.multiply(norm_scale_factor)
+    #print(np.where(df_n.sum(axis=1)==0))
     #compute relevant stats
     mu = df_n.mean(axis=1)
     sigma = df_n.std(axis=1)
+    #print ('num 0s in sigma ', len(np.where(sigma==0)[0]))
     cv = sigma/mu
+    #add 1 so 0 expr values become (log(0+1)=0)
     log2_mu = np.log2(mu)
     log2_cv = np.log2(cv)
+    #print (np.shape(log2_mu))
+    #print ('num inf in log2cv ', len(np.where(np.isinf(log2_cv))[0])) 
+    #print ('num NaNs in log2cv ', len(np.where(np.isnan(log2_cv))[0]))
     #get fit and use to get predicted values
     X = np.reshape(np.array(log2_mu),(log2_mu.shape[0],1))
     y = np.reshape(np.array(log2_cv),(log2_cv.shape[0],1))
@@ -409,8 +418,12 @@ def do_tsne(arr,n_components, n_iter, learning_rate, early_exaggeration, init, p
     #visualise tsne
     ax, fig = plt.subplots()
     fig.scatter(X_tsne[:, 0], X_tsne[:, 1], s = 2)
+    plt.xticks([])
+    plt.yticks([])
     plt.show()
     status_df.loc['do_tsne',:] = True
+
+    
     
     return X_tsne, status_df
 
@@ -495,6 +508,8 @@ def do_dbscan(epsilon, minpts, arr, status_df):
     
     p.legend_.remove()
     plt.title(f"Estimated number of clusters: {n_clusters_}, noise removed")
+    plt.xticks([])
+    plt.yticks([])
     plt.show()
     status_df.loc['do_dbscan',:] = True
     
@@ -609,9 +624,11 @@ def intra_cluster_sort(df, meta_data_df, linkage_cluster_order):
         x = df.iloc[:,np.where(meta_data_df.loc['cluster_label',:] == c)[0]]
         x_col = x.columns.to_list()
         x_arr = x.to_numpy()
+        #print(np.shape(x_arr))
         #perform tsne to reduce to 1D
-        #changed perplexity from 30 to 15 after harmony integration
-        tsne = TSNE(n_components=1, perplexity=15)
+        #changed perplexity from 30 to 15 after harmony integration (for original dimorph_processing_nb)
+        #for gaba analysis - drop to 6
+        tsne = TSNE(n_components=1, perplexity=6)
         # Apply t-SNE to reduce to 1 feature x num_cells. end up with a 1D vector for each unique label. 
         X_tsne = tsne.fit_transform(x_arr.T)
         #create temp dataframe of x_col and 1D tsne
@@ -710,15 +727,91 @@ def compute_marker_genes(df, meta_data_df, cluster_indices, linkage_cluster_orde
     xi0p5_marker = np.multiply(cluster_expr_ratios_marker, (cluster_mean_pos_marker**0.5))
     #for each row, get index of max column value
     ind = np.argmax(xi0p5_marker, axis=1)
-    print (ind)
+    #print (ind)
     #get indices of sorted list
     ind_s = np.argsort(ind)
-    print (ind_s)
+    #print (ind_s)
     #reorder marker genes accordingly
     marker_genes_sorted_final = [marker_genes_sorted[i] for i in ind_s]
     print (f'len marker_genes_sorted_final {len(marker_genes_sorted_final)}')
 
     return marker_genes_sorted_final, pos, ind, ind_s, marker_genes_sorted
+
+def get_heatmap_labels(mgs, ind, ind_s):
+    '''Uses sorted list of marker genes (mgs), column index of max marker value (ind), and arg sorted version of ind (ind_s) outputted by compute_marker_genes() to get
+    "waterfall" heatmap gene labels'''
+    
+    #use list of indices corresponding to column with max value of marker array
+    #to get sorted version
+    indy = np.sort(ind)
+
+    #get gene indices
+    g = []
+    for i in np.arange(0,len(np.unique(ind))):
+        #print(i)
+        x = ind_s[np.where(indy==i)]
+        g.append(x)
+
+    #use full marker gene list to convert list of indices to gene names
+    tg = []
+    for i in g:
+        gene = [mgs[x] for x in i]
+        #print(gene)
+        tg.append(gene)
+
+    #formatting fix #1 - add newline char after each gene so labels are stacked vertically
+    tgf = []
+    for i,x in enumerate(tg):
+        a = '\n '.join(tg[i])
+        tgf.append(a)
+
+    #formatting fix#2 - add space before 1st char in for each gene string list to fix alignment issue 
+    tgfs = []
+    for i in tgf:
+        x = ' ' + i
+        tgfs.append(x)
+        
+    return tg, tgfs
+
+def get_heatmap_cluster_borders(meta_data_df):
+    '''Use cluster labels in meta_data_df to determine index position of vertical border lines shown on heatmap.'''
+    x = list(meta_data_df.loc['cluster_label',:])
+    change_indices = [0]  # Initialize with the index of the first element
+
+    # Iterate through the list starting from the second element
+    for i in range(1, len(x)):
+        # Check if the current value is different from the previous value
+        if x[i] != x[i - 1]:
+            # If a change is detected, append the index to the list
+            change_indices.append(i)
+
+    print("Indices where the value changes:", change_indices)
+
+    change_indices = change_indices[1:] #ignore initial value set
+    
+    return change_indices
+
+def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs, linkage_alg, dist_metric, savefig = False, cell_class = 'OG'):
+    '''Plots markerheatmap, input expects df to be log/std. Cell_class used to update filename when savefig is true,
+    defaults to OG.'''
+    fig, ax = plt.subplots(figsize = (10,10))
+    sns.heatmap(df, robust=True,  cmap="viridis", yticklabels=True)
+    ax.set_xticks(ticks = pos, labels = linkage_cluster_order)
+    ax.set_yticks([])
+    ax.vlines(change_indices, -100 ,300, colors='gray', lw = 0.1)
+
+    ypos = 0
+
+    for i,v in enumerate(tg):
+        xpos = change_indices[i]
+        plt.text(xpos,ypos, tgfs[i], 
+                 verticalalignment='top', horizontalalignment = 'left', color="gray", fontsize = 2.9)
+        ypos+=int(len(tg[i]))
+    
+    if savefig:
+        plt.savefig('heatmap_' + cell_class + '_' +linkage_alg+'_'+dist_metric+'_' +today+'.png', dpi = 1200)
+
+    plt.show()
 
 def compute_marker_means(GABA_marker, 
                          Vglut1_marker, 
@@ -726,7 +819,8 @@ def compute_marker_means(GABA_marker,
                          exclude_markers_updated,
                          df_marker,
                          meta_data_df,
-                         linkage_cluster_order):
+                         linkage_cluster_order,
+                         m_factor):
     
     #dictionary mapping flag to class type
     flag_dict = {1:'GABA', 2:'Vglut1', 3:'Vglut2', 4:'Nonneuronal' , 5:'Doublet'}
@@ -785,7 +879,7 @@ def compute_marker_means(GABA_marker,
         #print (marker_means)
 
         #classify cluster based on greatest mean, adding flag to gabaglut, and corresponding class type to cell_class
-        if marker_means[0]>2*marker_means[1]:
+        if marker_means[0]>m_factor*marker_means[1]:
             if marker_means[0] == GABA_marker_mean:
                 #print ('gaba', GABA_marker_mean)
                 gabaglut[i] = 1
@@ -820,7 +914,17 @@ def compute_marker_means(GABA_marker,
     
     return mu_g, mu_vg1, mu_vg2, mu_nn, std_g, std_vg1,std_vg2,std_nn, label_to_class_map, meta_data_df
 
-def plot_cell_class(arr_df_class,arr_xy,labels):
+def plot_cell_class(arr_df, labels_to_class_map,labels):
+    
+    arr_df_sorted = arr_df.sort_values(by = 'labels')
+    arr_df_class = arr_df_sorted.copy()
+    arr_df_class.insert(3, 'cell_class', value = None)
+    #use labels to class map 
+    for i,l in enumerate(arr_df_class['labels']):
+        arr_df_class.iloc[i,3] = labels_to_class_map[l]
+    #seperate array needed for labeling clusters
+    arr_xy = arr_df.drop('labels', axis = 'columns')
+
     fig,ax = plt.subplots(figsize = (9,6))
     for n, grp in arr_df_class.groupby('cell_class'):
         ax.scatter(x = 'tsne-1',y = 'tsne-2', data=grp, label=n, s = 1)
@@ -839,6 +943,8 @@ def plot_cell_class(arr_df_class,arr_xy,labels):
     plt.yticks([])
 
     plt.show()  
+
+    return arr_df_class
 
 def plot_marker_means(mu_g,mu_vg1,mu_vg2,mu_nn,linkage_cluster_order):
     fig,ax = plt.subplots(figsize = (9,6))
@@ -877,9 +983,9 @@ def plot_marker_on_tsne(tsne_df,expr_df,marker_name, nn=False):
         #not non-neuronal
         z = np.array(expr_df.loc[marker_name,:])
         fig, ax = plt.subplots( figsize = (9,6))
-        scatter = ax.scatter(x, y, c = z , cmap = 'Greens' , s = 1)
+        scatter = ax.scatter(x, y, c = z , cmap = 'seismic' , s = 1)
         # Create colorbar
-        sm = ScalarMappable(cmap='Greens')
+        sm = ScalarMappable(cmap='seismic')
         sm.set_array(z)
         cbar = fig.colorbar(sm)
         cbar.set_label('Expr')
@@ -889,9 +995,9 @@ def plot_marker_on_tsne(tsne_df,expr_df,marker_name, nn=False):
         #non-neuronal
         z = marker_name
         fig, ax = plt.subplots( figsize = (9,6))
-        scatter = ax.scatter(x, y, c = z , cmap = 'Greens' , s = 1)
+        scatter = ax.scatter(x, y, c = z , cmap = 'seismic' , s = 1)
         # Create colorbar
-        sm = ScalarMappable(cmap='Greens')
+        sm = ScalarMappable(cmap='seismic')
         sm.set_array(z)
         cbar = fig.colorbar(sm)
         cbar.set_label('Expr')
@@ -902,7 +1008,7 @@ def plot_marker_on_tsne(tsne_df,expr_df,marker_name, nn=False):
 
     plt.show()
 
-def plot_all_markers(tsne_df, arr_xy, expr_df,GABA_marker, Vglut1_marker, Vglut2_marker, nonneuro, labels, label_clusters = False):
+def plot_all_markers(tsne_df, arr_xy, expr_df,GABA_marker, Vglut1_marker, Vglut2_marker, nonneuro, labels, date, label_clusters = False, savefig = False):
     x = np.array(tsne_df['tsne-1'])
     y = np.array(tsne_df['tsne-2'])
     z_gaba = np.array(expr_df.loc[GABA_marker,:])
@@ -946,5 +1052,6 @@ def plot_all_markers(tsne_df, arr_xy, expr_df,GABA_marker, Vglut1_marker, Vglut2
             axis.set_yticks([])
 
     plt.tight_layout()
-    #plt.savefig('./marker_expression_200424.png')
+    if savefig:
+        plt.savefig('./marker_expression_' +date+'.png')
     plt.show()

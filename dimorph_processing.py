@@ -451,6 +451,7 @@ def compute_eps(minpts, eps_prc, arr, status_df):
     epsilon = float(np.percentile(knn_rad, eps_prc))
     print ('params for dbscan')
     print ('minpts: ', minpts)
+    print ('epsilon percentile', eps_prc)
     print ('epsilon: ', str(epsilon) + '\n')
     status_df.loc['compute_eps',:] = True
     
@@ -546,7 +547,12 @@ def sort_by_cluster_label(df,meta_data_df,arr_df,labels):
     meta_data_df_updated:
         updated/reordered meta data with added labels row
     '''
-    #pandas bug 'nonetype .sort values' sometimes requires commenting out line 533 since the labels are already added
+    #remove old cluster_labels from meta_data if already present
+    if 'cluster_label' in meta_data_df.index:
+        print('found existing cluster_labels in meta_data_df... removing old labels...')
+        meta_data_df = meta_data_df.drop(['cluster_label'])
+
+    #pandas bug 'nonetype .sort values' sometimes requires commenting out arr_df.insert() line since the labels are already added
     #, and then just running function again...
     arr_df = arr_df.insert(2, 'labels',labels)
     arr_df_sorted = arr_df.sort_values(by = 'labels')
@@ -851,13 +857,13 @@ def compute_marker_means(GABA_marker,
         GABA_marker_mean = np.mean(tmp.loc[GABA_marker,:])
         Vglut1_marker_mean = np.mean(tmp.loc[Vglut1_marker,:])
         Vglut2_marker_mean = np.mean(tmp.loc[Vglut2_marker,:])
-        nonneuro_mean = np.mean(tmp.loc[exclude_markers_updated,:])
+        nonneuro_mean = np.mean(tmp.loc[exclude_markers_updated,:].sum(axis=0))
 
         #get row stds for markers within cluster
         GABA_marker_std = np.std(tmp.loc[GABA_marker,:], axis=0)
         Vglut1_marker_std = np.std(tmp.loc[Vglut1_marker,:], axis=0)
         Vglut2_marker_std = np.std(tmp.loc[Vglut2_marker,:], axis=0)
-        nonneuro_std = np.std(tmp.loc[exclude_markers_updated,:], axis=0)
+        nonneuro_std = np.std(tmp.loc[exclude_markers_updated,:].sum(axis=0), axis=0)
 
         #append mean to respective list
         mu_g.append(GABA_marker_mean)
@@ -873,8 +879,8 @@ def compute_marker_means(GABA_marker,
 
         #sort means descending
         marker_means = np.flip(np.sort(np.array([GABA_marker_mean,
-                                                 Vglut1_marker_mean,
-                                                 Vglut2_marker_mean,
+                                                 max(Vglut1_marker_mean,
+                                                 Vglut2_marker_mean),
                                                  nonneuro_mean])))
         #print (marker_means)
 
@@ -941,10 +947,9 @@ def plot_cell_class(arr_df, labels_to_class_map,labels):
 
     plt.xticks([])
     plt.yticks([])
-
     plt.show()  
 
-    return arr_df_class
+    return arr_df_class, arr_xy
 
 def plot_marker_means(mu_g,mu_vg1,mu_vg2,mu_nn,linkage_cluster_order):
     fig,ax = plt.subplots(figsize = (9,6))
@@ -1053,5 +1058,5 @@ def plot_all_markers(tsne_df, arr_xy, expr_df,GABA_marker, Vglut1_marker, Vglut2
 
     plt.tight_layout()
     if savefig:
-        plt.savefig('./marker_expression_' +date+'.png')
+        plt.savefig('./gaba_glut_NN_doublet_marker_expression_' +date+'.png')
     plt.show()

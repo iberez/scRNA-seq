@@ -797,14 +797,20 @@ def get_heatmap_cluster_borders(meta_data_df):
     
     return change_indices
 
-def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs, linkage_alg, dist_metric, savefig = False, cell_class = 'OG'):
+def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs, linkage_alg, dist_metric, sex_bool, savefig = False, cell_class = 'OG'):
     '''Plots markerheatmap, input expects df to be log/std. Cell_class used to update filename when savefig is true,
     defaults to OG.'''
-    fig, ax = plt.subplots(figsize = (10,10))
-    sns.heatmap(df, robust=True,  cmap="viridis", yticklabels=True)
-    ax.set_xticks(ticks = pos, labels = linkage_cluster_order)
-    ax.set_yticks([])
-    ax.vlines(change_indices, -100 ,300, colors='gray', lw = 0.1)
+    
+    
+    fig, (ax1,ax2) = plt.subplots(2,1, figsize = (10,10), sharex=True)
+    ax1.imshow([sex_bool],cmap='gray', aspect = 'auto')
+    ax1.set_ylabel('sex')
+    ax1.set_yticks([])
+    ax1.set_xticks([])
+    ax2 = sns.heatmap(df, robust=True,  cmap="viridis", yticklabels=True,  cbar_kws = dict(use_gridspec=False,location="top"))
+    ax2.set_xticks(ticks = pos, labels = linkage_cluster_order)
+    ax2.set_yticks([])
+    ax2.vlines(change_indices, -100 ,300, colors='gray', lw = 0.1)
 
     ypos = 0
 

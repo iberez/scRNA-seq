@@ -797,20 +797,14 @@ def get_heatmap_cluster_borders(meta_data_df):
     
     return change_indices
 
-def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs, linkage_alg, dist_metric, sex_bool, savefig = False, cell_class = 'OG'):
+def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs, linkage_alg, dist_metric, savefig = False, cell_class = 'OG'):
     '''Plots markerheatmap, input expects df to be log/std. Cell_class used to update filename when savefig is true,
     defaults to OG.'''
-    
-    
-    fig, (ax1,ax2) = plt.subplots(2,1, figsize = (10,10), sharex=True)
-    ax1.imshow([sex_bool],cmap='gray', aspect = 'auto')
-    ax1.set_ylabel('sex')
-    ax1.set_yticks([])
-    ax1.set_xticks([])
-    ax2 = sns.heatmap(df, robust=True,  cmap="viridis", yticklabels=True,  cbar_kws = dict(use_gridspec=False,location="top"))
-    ax2.set_xticks(ticks = pos, labels = linkage_cluster_order)
-    ax2.set_yticks([])
-    ax2.vlines(change_indices, -100 ,300, colors='gray', lw = 0.1)
+    fig, ax = plt.subplots(figsize = (10,10))
+    sns.heatmap(df, robust=True,  cmap="viridis", yticklabels=True)
+    ax.set_xticks(ticks = pos, labels = linkage_cluster_order)
+    ax.set_yticks([])
+    ax.vlines(change_indices, -100 ,300, colors='gray', lw = 0.1)
 
     ypos = 0
 
@@ -823,6 +817,101 @@ def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs
     if savefig:
         plt.savefig('heatmap_' + cell_class + '_' +linkage_alg+'_'+dist_metric+'_' +today+'.png', dpi = 1200)
 
+    plt.show()
+
+def get_boolean_vecs(meta_data_df):
+    '''Takes in metadata dataframe, maps relevant feature, and returns boolean vectors for each'''
+    
+    #map male/female cells to boolean
+    s_map = {'M':True,'F':False}
+    s_bool = np.array(meta_data_df.loc['Sex'].map(s_map))
+    #map breeder/naive cells to boolean
+    bn_map = {"Breeder-M":True, "Breeder-F":True, "Naïve-M":False, "Naïve-F":False}
+    bn_bool = np.array(meta_data_df.loc['Group'].map(bn_map))
+    #map gaba cells to boolean
+    gaba_map = {'Doublet':False, 'GABA':True, 'Nonneuronal':False, 'Vglut1':False, 'Vglut2':False}
+    gaba_bool = np.array(meta_data_df.loc['cell_class'].map(gaba_map))
+    #map doublet cells to boolean
+    doublet_map = {'Doublet':True, 'GABA':False, 'Nonneuronal':False, 'Vglut1':False, 'Vglut2':False}
+    doublet_bool = np.array(meta_data_df.loc['cell_class'].map(doublet_map))
+    #map vglut1 cells to boolean
+    vglut1_map = {'Doublet':False, 'GABA':False, 'Nonneuronal':False, 'Vglut1':True, 'Vglut2':False}
+    vglut1_bool = np.array(meta_data_df.loc['cell_class'].map(vglut1_map))
+    #map vglut2 cells to boolean
+    vglut2_map = {'Doublet':False, 'GABA':False, 'Nonneuronal':False, 'Vglut1':False, 'Vglut2':True}
+    vglut2_bool = np.array(meta_data_df.loc['cell_class'].map(vglut2_map))
+    #map nonneuronal cells to boolean
+    nonneuronal_map = {'Doublet':False, 'GABA':False, 'Nonneuronal':True, 'Vglut1':False, 'Vglut2':False}
+    nonneuronal_bool = np.array(meta_data_df.loc['cell_class'].map(nonneuronal_map))
+    
+    return s_bool,bn_bool, gaba_bool, doublet_bool, vglut1_bool, vglut2_bool, nonneuronal_bool
+
+def plot_marker_heatmap_w_bool_bars(df, pos, linkage_cluster_order, change_indices, tg, tgfs, linkage_alg, dist_metric, sex_bool, group_bool, gaba_bool, doublet_bool, vglut1_bool, vglut2_bool, nonneuronal_bool, savefig = False, cell_class = 'OG'):
+    '''Same as plot marker heatmap above, but additionally takes in boolean vectors sex, group, and class and displays these boolean vectors above heatmap.'''
+    
+    
+    fig, (ax1,ax2,ax3, ax4, ax5, ax6, ax7, ax8) = plt.subplots(8,1, figsize = (10,10), sharex=True, gridspec_kw={'height_ratios': [1, 1, 1, 1, 1, 1, 1, 15]})
+    #sex boolean vector visual bar
+    ax1.imshow([sex_bool],cmap='gray', aspect = 'auto')
+    ax1.set_ylabel('sex')
+    ax1.set_yticks([])
+    ax1.set_xticks([])
+
+    #group (boolean/naive) boolean vector visual bar
+    ax2.imshow([group_bool],cmap='gray', aspect = 'auto')
+    ax2.set_ylabel('group')
+    ax2.set_yticks([])
+    ax2.set_xticks([])
+
+    #gaba boolean vector visual bar
+    ax3.imshow([gaba_bool],cmap='gray', aspect = 'auto')
+    ax3.set_ylabel('gaba')
+    ax3.set_yticks([])
+    ax3.set_xticks([])
+    
+    #doublet boolean vector visual bar
+    ax4.imshow([doublet_bool],cmap='gray', aspect = 'auto')
+    ax4.set_ylabel('doublet')
+    ax4.set_yticks([])
+    ax4.set_xticks([])
+
+    #vglut1 boolean vector visual bar
+    ax5.imshow([vglut1_bool],cmap='gray', aspect = 'auto')
+    ax5.set_ylabel('vglut1')
+    ax5.set_yticks([])
+    ax5.set_xticks([])
+
+    #vglut2 boolean vector visual bar
+    ax6.imshow([vglut2_bool],cmap='gray', aspect = 'auto')
+    ax6.set_ylabel('vglut2')
+    ax6.set_yticks([])
+    ax6.set_xticks([])
+
+    #nonneuronal boolean vector visual bar
+    ax7.imshow([nonneuronal_bool],cmap='gray', aspect = 'auto')
+    ax7.set_ylabel('nn')
+    ax7.set_yticks([])
+    ax7.set_xticks([])
+
+    #use code beloew in heatmap() to configure colobar loc if desired, otherwise hide it
+    #cbar_kws = dict(use_gridspec=False,location="top")'''
+    ax8 = sns.heatmap(df, robust=True,  cmap="viridis", yticklabels=True,  cbar=False)
+    ax8.set_xticks(ticks = pos, labels = linkage_cluster_order)
+    ax8.set_yticks([])
+    ax8.vlines(change_indices, -100 ,300, colors='gray', lw = 0.1)
+
+    ypos = 0
+
+    for i,v in enumerate(tg):
+        xpos = change_indices[i]
+        plt.text(xpos,ypos, tgfs[i], 
+                 verticalalignment='top', horizontalalignment = 'left', color="gray", fontsize = 2.9)
+        ypos+=int(len(tg[i]))
+    
+    if savefig:
+        plt.savefig('heatmap_w_bool_bars_' + cell_class + '_' +linkage_alg+'_'+dist_metric+'_' +today+'.png', dpi = 1200)
+
+    plt.tight_layout()
     plt.show()
 
 def compute_marker_means(GABA_marker, 

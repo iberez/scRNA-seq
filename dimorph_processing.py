@@ -36,6 +36,7 @@ from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, 
 import harmonypy as hm
 from matplotlib.cm import ScalarMappable
 from datetime import date
+import mpld3
 
 today = str(date.today())
 
@@ -141,6 +142,25 @@ def gene_exclusion(num_cell_lwr_bound, percent_cell_upper_bound, df, df_bool, me
     status_df.loc['gene_exclusion (l1)',:] = True
     
     return df_updated, df_bool_updated, meta_data_df_updated, status_df
+
+
+def gene_remover(gene_list, df):
+    '''Takes in a list of genes (strings), and gene expression dataframe with genes as index. Checks which genes from list
+    are also in the dataframe, and drops these rows. Returns updated dataframe with genes removed.'''
+    genes_in_df = []
+    count = 0
+    for g in gene_list:
+        if g in df.index:
+            count+=1
+            #print (g)
+            genes_in_df.append(g)
+    print ('removing ', len(genes_in_df), ' genes found in ', str(gene_list))
+    #remove genes found in df
+    df_updated = df.drop(labels = genes_in_df)
+    
+    return df_updated
+
+
 
 def avg_bool_gene_expression_by_sex(df_bool, meta_data_df, num_top_genes, plot_flag = 0):
     '''computes the mean of each gene (row) from bool expressed genes, isolated by sex, 
@@ -797,7 +817,7 @@ def get_heatmap_cluster_borders(meta_data_df):
     
     return change_indices
 
-def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs, linkage_alg, dist_metric, savefig = False, cell_class = 'OG'):
+def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs, linkage_alg, dist_metric, folder, savefig = False, cell_class = 'OG'):
     '''Plots markerheatmap, input expects df to be log/std. Cell_class used to update filename when savefig is true,
     defaults to OG.'''
     fig, ax = plt.subplots(figsize = (10,10))
@@ -815,7 +835,14 @@ def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs
         ypos+=int(len(tg[i]))
     
     if savefig:
-        plt.savefig('heatmap_' + cell_class + '_' +linkage_alg+'_'+dist_metric+'_' +today+'.png', dpi = 1200)
+        plt.savefig(folder+'heatmap_' + cell_class + '_' +linkage_alg+'_'+dist_metric+'_' +today+'.png', dpi = 1200)
+        #use mpld3 to save interactive plot as html
+        #html_str = mpld3.fig_to_html(fig)
+        #Html_file= open(folder+ 'mlpd3_heatmap_' + cell_class + '_' +linkage_alg+'_'+dist_metric + '_' +today+'.html',"w")
+        #Html_file.write(html_str)
+        #Html_file.close()
+        #filename = folder+ 'sh_mlpd3_heatmap_' + cell_class + '_' +linkage_alg+'_'+dist_metric + '_' +today +'.html'
+        #mpld3.save_html(fig, filename)
 
     plt.show()
 

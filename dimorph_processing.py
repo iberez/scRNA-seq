@@ -144,6 +144,7 @@ def gene_exclusion(num_cell_lwr_bound, percent_cell_upper_bound, df, df_bool, me
     return df_updated, df_bool_updated, meta_data_df_updated, status_df
 
 
+
 def gene_remover(gene_list, df):
     '''Takes in a list of genes (strings), and gene expression dataframe with genes as index. Checks which genes from list
     are also in the dataframe, and drops these rows. Returns updated dataframe with genes removed.'''

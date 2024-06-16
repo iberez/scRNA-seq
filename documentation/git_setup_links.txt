@@ -9,3 +9,5 @@ https://docs.github.com/en/authentication/connecting-to-github-with-ssh/adding-a
     git config --global user.email "<email>"
     git config --global user.name "<name>"
 
+*** note: remeber to always use 'git' as user!!!****
+https://docs.github.com/en/authentication/troubleshooting-ssh/error-permission-denied-publickey

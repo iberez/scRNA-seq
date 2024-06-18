@@ -1183,3 +1183,17 @@ def plot_all_markers(tsne_df, arr_xy, expr_df,GABA_marker, Vglut1_marker, Vglut2
     if savefig:
         plt.savefig('./gaba_glut_NN_doublet_marker_expression_' +date+'.png')
     plt.show()
+
+
+def compute_avg_expr_per_cluster_label(df,meta_data_df):
+    '''
+    For level 3 analysis comparing amygdala datasets (see cell_comparison_nb.ipynb). For a given gene expression matrix and metadata with 'cluster_label' row, computes average expression of every gene for each cluster label.
+    Returns dataframe of n_genes x n_cluster_labels
+    '''
+    avg_df = pd.DataFrame(index=df.index, columns = np.unique(meta_data_df.loc['cluster_label']))
+    lbs = np.unique(meta_data_df.loc['cluster_label'])
+    for label in lbs:
+        #for each cluster label, store mean expr vector
+        avg_df.loc[:,label] = df.loc[:,meta_data_df.loc['cluster_label']==label].mean(axis=1)
+    
+    return avg_df

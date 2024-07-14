@@ -756,7 +756,7 @@ def compute_marker_genes(df, meta_data_df, cluster_indices, linkage_cluster_orde
     ind = np.argmax(xi0p5_marker, axis=1)
     #print (ind)
     #get indices of sorted list
-    ind_s = np.argsort(ind)
+    ind_s = np.argsort(ind,axis = 0)
     #print (ind_s)
     #reorder marker genes accordingly
     marker_genes_sorted_final = [marker_genes_sorted[i] for i in ind_s]
@@ -811,7 +811,9 @@ def get_heatmap_cluster_borders(meta_data_df):
         if x[i] != x[i - 1]:
             # If a change is detected, append the index to the list
             change_indices.append(i)
-
+    
+    #add last element
+    change_indices.append(len(x)-1)
     print("Indices where the value changes:", change_indices)
 
     change_indices = change_indices[1:] #ignore initial value set
@@ -825,18 +827,18 @@ def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs
     sns.heatmap(df, robust=True,  cmap="viridis", yticklabels=True)
     ax.set_xticks(ticks = pos, labels = linkage_cluster_order)
     ax.set_yticks([])
-    ax.vlines(change_indices, -100 ,300, colors='gray', lw = 0.1)
+    ax.vlines(change_indices, 0 ,len(df.index), colors='gray', lw = 0.1)
 
     ypos = 0
-
+    vertical_spacing = 0.2
     for i,v in enumerate(tg):
         xpos = change_indices[i]
         plt.text(xpos,ypos, tgfs[i], 
-                 verticalalignment='top', horizontalalignment = 'left', color="gray", fontsize = 2.9)
+                 verticalalignment='top', horizontalalignment = 'left', color="gray", fontsize = 1.7, fontweight = 'bold', fontname = 'monospace')
         ypos+=int(len(tg[i]))
     
     if savefig:
-        plt.savefig(folder+'heatmap_' + cell_class + '_' +linkage_alg+'_'+dist_metric+'_' +today+'.png', dpi = 1200)
+        plt.savefig(folder+'heatmap_' + cell_class + '_' +linkage_alg+'_'+dist_metric+'_' +today+'.jpeg', dpi = 1200)
         #use mpld3 to save interactive plot as html
         #html_str = mpld3.fig_to_html(fig)
         #Html_file= open(folder+ 'mlpd3_heatmap_' + cell_class + '_' +linkage_alg+'_'+dist_metric + '_' +today+'.html',"w")
@@ -1197,3 +1199,16 @@ def compute_avg_expr_per_cluster_label(df,meta_data_df):
         avg_df.loc[:,label] = df.loc[:,meta_data_df.loc['cluster_label']==label].mean(axis=1)
     
     return avg_df
+
+def compute_std_expr_per_cluster_label(df,meta_data_df):
+    '''
+    For level 3 analysis comparing amygdala datasets (see cell_comparison_nb.ipynb). For a given gene expression matrix and metadata with 'cluster_label' row, computes standard deviation expression of every gene for each cluster label.
+    Returns dataframe of n_genes x n_cluster_labels
+    '''
+    std_df = pd.DataFrame(index=df.index, columns = np.unique(meta_data_df.loc['cluster_label']))
+    lbs = np.unique(meta_data_df.loc['cluster_label'])
+    for label in lbs:
+        #for each cluster label, store absolute value standard dev vector
+        std_df.loc[:,label] = df.loc[:,meta_data_df.loc['cluster_label']==label].std(axis=1)
+    
+    return std_df

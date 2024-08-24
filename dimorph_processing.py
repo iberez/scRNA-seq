@@ -764,6 +764,21 @@ def compute_marker_genes(df, meta_data_df, cluster_indices, linkage_cluster_orde
 
     return marker_genes_sorted_final, pos, ind, ind_s, marker_genes_sorted
 
+def get_tgfs_from_tg(tg):
+    #compute formated tgfs from tg
+    #formatting fix #1 - add newline char after each gene so labels are stacked vertically
+    tgf = []
+    for i,x in enumerate(tg):
+        a = '\n '.join(tg[i])
+        tgf.append(a)
+
+    #formatting fix#2 - add space before 1st char in for each gene string list to fix alignment issue 
+    tgfs = []
+    for i in tgf:
+        x = ' ' + i
+        tgfs.append(x)
+    return tgfs
+
 def get_heatmap_labels(mgs, ind, ind_s):
     '''Uses sorted list of marker genes (mgs), column index of max marker value (ind), and arg sorted version of ind (ind_s) outputted by compute_marker_genes() to get
     "waterfall" heatmap gene labels'''
@@ -820,7 +835,7 @@ def get_heatmap_cluster_borders(meta_data_df):
     
     return change_indices
 
-def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs, linkage_alg, dist_metric, folder, savefig = False, cell_class = 'OG'):
+def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs, linkage_alg, dist_metric, folder, fs_waterfall = None, cluster_labels = None, savefig = False, cell_class = 'OG'):
     '''Plots markerheatmap, input expects df to be log/std. Cell_class used to update filename when savefig is true,
     defaults to OG.'''
     fig, ax = plt.subplots(figsize = (10,10))
@@ -834,9 +849,18 @@ def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs
     for i,v in enumerate(tg):
         xpos = change_indices[i]
         plt.text(xpos,ypos, tgfs[i], 
-                 verticalalignment='top', horizontalalignment = 'left', color="gray", fontsize = 1.7, fontweight = 'bold', fontname = 'monospace')
+                 verticalalignment='top', horizontalalignment = 'left', color="gray", fontsize = fs_waterfall, fontweight = 'bold', fontname = 'monospace')
         ypos+=int(len(tg[i]))
     
+    if cluster_labels:
+        ypos = 0
+        for i,l in enumerate(zip(tg,cluster_labels)):
+            xpos = change_indices[i]
+            plt.text(xpos,ypos, cluster_labels[i], 
+                    verticalalignment='top', horizontalalignment = 'right', color="white", fontsize = fs_waterfall, fontweight = 'bold',
+                    rotation = 'vertical')
+            ypos+=int(len(tg[i]))
+
     if savefig:
         plt.savefig(folder+'heatmap_' + cell_class + '_' +linkage_alg+'_'+dist_metric+'_' +today+'.jpeg', dpi = 1200)
         #use mpld3 to save interactive plot as html
@@ -876,7 +900,7 @@ def get_boolean_vecs(meta_data_df):
     
     return s_bool,bn_bool, gaba_bool, doublet_bool, vglut1_bool, vglut2_bool, nonneuronal_bool
 
-def plot_marker_heatmap_w_bool_bars(df, pos, linkage_cluster_order, change_indices, tg, tgfs, linkage_alg, dist_metric, sex_bool, group_bool, gaba_bool, doublet_bool, vglut1_bool, vglut2_bool, nonneuronal_bool, savefig = False, cell_class = 'OG'):
+def plot_marker_heatmap_w_bool_bars(df, pos, linkage_cluster_order, change_indices, tg, tgfs, linkage_alg, dist_metric, folder, sex_bool, group_bool, gaba_bool, doublet_bool, vglut1_bool, vglut2_bool, nonneuronal_bool, savefig = False, cell_class = 'OG'):
     '''Same as plot marker heatmap above, but additionally takes in boolean vectors sex, group, and class and displays these boolean vectors above heatmap.'''
     
     
@@ -939,7 +963,54 @@ def plot_marker_heatmap_w_bool_bars(df, pos, linkage_cluster_order, change_indic
         ypos+=int(len(tg[i]))
     
     if savefig:
-        plt.savefig('heatmap_w_bool_bars_' + cell_class + '_' +linkage_alg+'_'+dist_metric+'_' +today+'.png', dpi = 1200)
+        plt.savefig(folder + 'heatmap_w_bool_bars_' + cell_class + '_' +linkage_alg+'_'+dist_metric+'_' +today+'.png', dpi = 1200)
+
+    plt.tight_layout()
+    plt.show()
+
+def plot_subclass_marker_heatmap_w_bool_bars(df, pos, linkage_cluster_order, change_indices, tg, tgfs, cluster_labels, linkage_alg, dist_metric, folder, sex_bool, group_bool, savefig = False, cell_class = 'OG'):
+    '''Same as plot marker heatmap w bool bars, but use for a subclass (i.e. gaba, glut, nn), so class bool bars are removed'''
+    
+    
+    fig, (ax1,ax2,ax3) = plt.subplots(3,1, figsize = (10,10), sharex=True, gridspec_kw={'height_ratios': [1, 1, 15]})
+    #sex boolean vector visual bar
+    ax1.imshow([sex_bool],cmap='gray', aspect = 'auto')
+    ax1.set_ylabel('sex')
+    ax1.set_yticks([])
+    ax1.set_xticks([])
+
+    #group (boolean/naive) boolean vector visual bar
+    ax2.imshow([group_bool],cmap='gray', aspect = 'auto')
+    ax2.set_ylabel('group')
+    ax2.set_yticks([])
+    ax2.set_xticks([])
+
+    #use code beloew in heatmap() to configure colobar loc if desired, otherwise hide it
+    #cbar_kws = dict(use_gridspec=False,location="top")'''
+    ax3 = sns.heatmap(df, robust=True,  cmap="viridis", yticklabels=True,  cbar=False)
+    ax3.set_xticks(ticks = pos, labels = linkage_cluster_order)
+    ax3.set_yticks([])
+    ax3.vlines(change_indices, -100 ,300, colors='gray', lw = 0.1)
+
+    ypos = 0
+
+    for i,v in enumerate(tg):
+        xpos = change_indices[i]
+        plt.text(xpos,ypos, tgfs[i], 
+                 verticalalignment='top', horizontalalignment = 'left', color="gray", fontsize = 1.3)
+        ypos+=int(len(tg[i]))
+    
+    #add cluster labels
+    ypos = 0
+    for i,l in enumerate(zip(tg,cluster_labels)):
+        xpos = change_indices[i]
+        plt.text(xpos,ypos, cluster_labels[i], 
+                verticalalignment='top', horizontalalignment = 'right', color="white", fontsize = 1.7, fontweight = 'bold',
+                rotation = 'vertical')
+        ypos+=int(len(tg[i]))
+        
+    if savefig:
+        plt.savefig(folder+ 'subclass_heatmap_w_bool_bars_' + cell_class + '_' +linkage_alg+'_'+dist_metric+'_' +today+'.png', dpi = 1200)
 
     plt.tight_layout()
     plt.show()
@@ -1212,3 +1283,103 @@ def compute_std_expr_per_cluster_label(df,meta_data_df):
         std_df.loc[:,label] = df.loc[:,meta_data_df.loc['cluster_label']==label].std(axis=1)
     
     return std_df
+
+def drop_clusters(cl_mg_dict,gene_list = None):
+    '''returns list cluster ids with 0 markers from enrichment analysis and those with gene specified in gene list. also grabs ids of any missing k/v pairs.'''
+    clusters_to_drop = []
+    for k,v in cl_mg_dict.items():
+        if len(v) == 0:
+            clusters_to_drop.append(k)
+        #after qualitative review, remove cluster 25 containting glut marker Slc17a6 , cluster 3 contating only Ddit4l
+        if gene_list != None:    
+            for g in gene_list:
+                if g in v:
+                    clusters_to_drop.append(k)
+    #print (clusters_to_drop)
+    full_rng = np.arange(sorted(cl_mg_dict.keys())[0],sorted(cl_mg_dict.keys())[-1:][0])
+    missing_clusters = np.setdiff1d(full_rng, np.array(sorted(cl_mg_dict.keys())))
+    clusters_to_drop.extend(missing_clusters)
+    #print (clusters_to_drop)
+    return (clusters_to_drop)
+
+def filter_heatmap_elements(clusters_to_drop,gene_list,linkage_cluster_order,df_marker_log_and_std,meta_data_df_plis,tg,tgfs, cluster_indices):
+    '''using clusters to drop list, filter heatmap elements, return each as [element]_filtered'''
+    linkage_cluster_order_filtered = [x for x in linkage_cluster_order if x not in clusters_to_drop]
+    #only works on first element in gene list, if gene list is longer than 1 element, need to manually add "and gene_list[i]" below..
+    tg_filtered = [x for x in tg if len(x)>0 and gene_list[0] not in x]
+    tgfs_filtered = [x for x in tgfs if len(x)>1 and gene_list[0] not in x]
+    
+    filtered_index = [item for sublist in tg_filtered for item in sublist]
+    df_marker_log_and_std_filtered = df_marker_log_and_std.copy()
+    meta_data_df_plis_filtered = meta_data_df_plis.copy()
+    
+    mask = meta_data_df_plis_filtered.loc['cluster_label'].apply(lambda x: x not in clusters_to_drop)
+    meta_data_df_plis_filtered = meta_data_df_plis_filtered.loc[:,mask]
+    df_marker_log_and_std_filtered = df_marker_log_and_std_filtered.loc[filtered_index,mask]
+    
+    change_indices_filtered = get_heatmap_cluster_borders(meta_data_df_plis_filtered)
+    lc_ci_dict = dict(zip(linkage_cluster_order,cluster_indices))
+    cluster_indices_filtered_tmp = [v for k,v in lc_ci_dict.items() if k in linkage_cluster_order_filtered]
+    
+    #get updated pos
+    tmp = 0
+    pos_filtered_tmp = [] 
+    for idx, c in enumerate(zip(linkage_cluster_order_filtered,cluster_indices_filtered_tmp)):
+        #append mean of cell indices btwn tmp and tmp + length of cluster
+        pos_filtered_tmp.append(np.mean(np.arange(tmp,tmp+len(c[1]))))
+        #update pointer
+        tmp+=len(c[1])
+    
+    df_marker_log_and_std_col_filtered = pd.DataFrame(data = df_marker_log_and_std_filtered.to_numpy(), 
+                                         index = df_marker_log_and_std_filtered.index,
+                                        columns = list(meta_data_df_plis_filtered.loc['cluster_label',:]))
+    
+    return df_marker_log_and_std_filtered, df_marker_log_and_std_col_filtered, meta_data_df_plis_filtered, pos_filtered_tmp, tg_filtered, tgfs_filtered, linkage_cluster_order_filtered,change_indices_filtered,lc_ci_dict, cluster_indices_filtered_tmp
+
+def compute_fs_waterfall(marker_genes_sorted):
+    '''autocomputes optimal fontsize for waterfall gene labeling on heatmap'''
+    fs = (len(marker_genes_sorted)-260.5)/(-28.33332)
+    fs_w = round(fs,1)
+    return fs_w
+
+def plot_filtered_tsne(arr,labels,cluster_labels,metadata_df,drop_clusters_list,folder, plot_title,savefig=True):
+    '''plot filtered tsne plot'''
+    ids_filtered = np.sort(pd.unique(metadata_df.loc['cluster_label']))
+    #arr.insert(2, 'labels',labels)
+    arr_sorted = arr.sort_values(by = 'labels')
+    arr_filtered = arr_sorted.copy()
+    arr_filtered = arr_filtered[arr_filtered['labels'].isin(ids_filtered)]
+    arr_xy = arr.drop('labels', axis = 'columns')
+    fig,ax = plt.subplots(figsize = (15,15))
+    #ax.scatter(arr_filtered['tsne-1'], arr_filtered['tsne-2'], s = 2)
+    for n, grp in arr_filtered.groupby('labels'):
+        ax.scatter(x = 'tsne-1',y = 'tsne-2', data=grp, label=n, s = 1)
+    '''
+    handles, lgd_labels = ax.get_legend_handles_labels()
+    lgnd = ax.legend(handles,cluster_labels, loc = 'right', bbox_to_anchor=(1.25, 0.5))
+    for handle in lgnd.legend_handles:
+        handle.set_sizes([10.0])
+    '''
+    plt.xticks([])
+    plt.yticks([])
+    plt.title(plot_title)
+    #print (len(set(labels)))
+    labels_filtered = [label for label in set(labels) if label not in drop_clusters_list]
+    #print (len(set(labels_filtered)))
+    for i,cl in enumerate(zip(labels_filtered,cluster_labels)):
+        cluster_median = arr_xy[labels == cl[0]].median()
+        #print (cluster_median)
+        ax.annotate(text = cl[1].split(' ')[1], xy=cluster_median, fontsize=8, color='black',
+                            ha='center', va='center', bbox=dict(boxstyle='round', alpha=0.2))
+    '''
+    for label in set(labels):
+        if label != -1:
+            if label not in drop_clusters_list:
+                cluster_median = gaba_arr_xy[labels == label].median()
+                #print (cluster_median)
+                ax.annotate(text = label, xy=cluster_median, fontsize=8, color='black',
+                            ha='center', va='center', bbox=dict(boxstyle='round', alpha=0.2))
+    '''
+    if savefig:
+        plt.savefig(folder + 'filtered_tsne_' + plot_title + '_' + today + '.png', dpi = 1200, bbox_inches='tight')
+    plt.show()

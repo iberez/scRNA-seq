@@ -232,6 +232,13 @@ def create_mg_cl_dict_final(cl_mg_dict,sd_shared_cl_mg_dict):
     
     return mg_cl_dict_final
 
+def filter_mg_cl_dict_final_sorted(mg_cl_dict_final_sorted, clusters_to_drop):
+    mg_cl_dict_final_sorted_filtered = deepcopy(mg_cl_dict_final_sorted)
+    for k,v in mg_cl_dict_final_sorted.items():
+        if k in clusters_to_drop:
+            del (mg_cl_dict_final_sorted_filtered[k])
+    return mg_cl_dict_final_sorted_filtered
+
 def build_corr_table_shared_top(heatmap_argmax_df_alt_lco,corr_matrix_manual_alt_lco, all_m_u, amy_metadata_df, cl_mg_dict_updated):
     '''identfy shared markers between amy and sd correlated cluster, then get the top sd marker, store in '''
     connector_df_alt_lco = heatmap_argmax_df_alt_lco.sort_values(by = 'argmax').copy()

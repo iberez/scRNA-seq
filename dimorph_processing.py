@@ -873,6 +873,36 @@ def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs
 
     plt.show()
 
+def get_cluster_labels(folder,sd_labels_df_fn, all_dropped_clusters):
+    sd_labels_df = pd.read_csv(folder + sd_labels_df_fn,index_col= 0)
+    corr_labels = [l for l in list(sd_labels_df.loc[:,'sd_label_complete']) if len(l)>3]
+    corr_labels_filtered = corr_labels.copy()
+    for i,l in enumerate(corr_labels_filtered):
+        l_id = int(l.split(' ')[0])
+        if l_id in all_dropped_clusters:
+            print ('removing id: ', l_id)
+            corr_labels_filtered.pop(i)
+    cluster_labels = [x.split(' ')[1] for x in corr_labels_filtered]
+    return corr_labels_filtered, cluster_labels
+
+def update_metadata_w_markers(folder, meta_data_df_plis_filtered, mg_cl_dict_final_sorted_filtered_fn):
+    '''updates metadata with markers from cell comp analysis'''
+    meta_data_df_plis_filtered_markers = meta_data_df_plis_filtered.copy()
+    with open(folder + mg_cl_dict_final_sorted_filtered_fn) as json_data:
+        mg_cl_dict_final_sorted_filtered = json.load(json_data)
+    mg_cl_dict_final_sorted_filtered = {int(k):v for k,v in mg_cl_dict_final_sorted_filtered.items()}
+    m_list = []
+    for v in np.array(meta_data_df_plis_filtered.loc['cluster_label']):
+        m = mg_cl_dict_final_sorted_filtered[v]
+        mc = '-'.join(m)
+        m_list.append(mc)
+    m_list = np.reshape(np.array(m_list),(1,len(m_list)))
+    #build marker row
+    markers = pd.DataFrame(m_list, columns = meta_data_df_plis_filtered.columns, index = ['markers'])
+    meta_data_df_plis_filtered_markers = pd.concat([meta_data_df_plis_filtered, markers])
+
+    return meta_data_df_plis_filtered_markers
+
 def get_boolean_vecs(meta_data_df):
     '''Takes in metadata dataframe, maps relevant feature, and returns boolean vectors for each'''
     
@@ -1302,12 +1332,12 @@ def drop_clusters(cl_mg_dict,gene_list = None):
     #print (clusters_to_drop)
     return (clusters_to_drop)
 
-def filter_heatmap_elements(clusters_to_drop,gene_list,linkage_cluster_order,df_marker_log_and_std,meta_data_df_plis,tg,tgfs, cluster_indices):
+def filter_heatmap_elements(clusters_to_drop,linkage_cluster_order,df_marker_log_and_std,meta_data_df_plis,tg,tgfs, cluster_indices, gene_list = None):
     '''using clusters to drop list, filter heatmap elements, return each as [element]_filtered'''
     linkage_cluster_order_filtered = [x for x in linkage_cluster_order if x not in clusters_to_drop]
     #only works on first element in gene list, if gene list is longer than 1 element, need to manually add "and gene_list[i]" below..
-    tg_filtered = [x for x in tg if len(x)>0 and gene_list[0] not in x]
-    tgfs_filtered = [x for x in tgfs if len(x)>1 and gene_list[0] not in x]
+    tg_filtered = [x for x in tg if len(x)>0] #and gene_list[0] not in x]
+    tgfs_filtered = [x for x in tgfs if len(x)>1] #and gene_list[0] not in x]
     
     filtered_index = [item for sublist in tg_filtered for item in sublist]
     df_marker_log_and_std_filtered = df_marker_log_and_std.copy()

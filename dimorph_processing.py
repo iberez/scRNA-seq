@@ -873,24 +873,36 @@ def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs
 
     plt.show()
 
-def get_cluster_labels(folder,sd_labels_df_fn, all_dropped_clusters):
+def get_cluster_labels(folder,sd_labels_df_fn):
     sd_labels_df = pd.read_csv(folder + sd_labels_df_fn,index_col= 0)
-    corr_labels = [l for l in list(sd_labels_df.loc[:,'sd_label_complete']) if len(l)>3]
-    corr_labels_filtered = corr_labels.copy()
-    for i,l in enumerate(corr_labels_filtered):
-        l_id = int(l.split(' ')[0])
-        if l_id in all_dropped_clusters:
-            print ('removing id: ', l_id)
-            corr_labels_filtered.pop(i)
-    cluster_labels = [x.split(' ')[1] for x in corr_labels_filtered]
-    return corr_labels_filtered, cluster_labels
+    # corr_labels = [l for l in list(sd_labels_df.loc[:,'sd_label_complete']) if len(l)>3]
+    # corr_labels_filtered = corr_labels.copy()
+    # for i,l in enumerate(corr_labels_filtered):
+    #     l_id = int(l.split(' ')[0])
+    #     if l_id in all_dropped_clusters:
+    #         print ('removing id: ', l_id)
+    #         corr_labels_filtered.pop(i)
+    corr_labels = [l for l in list(sd_labels_df.loc[:,'sd_label_complete'])]
+    cluster_labels = [x.split(' ')[1] for x in corr_labels]
+    return corr_labels, cluster_labels
 
-def update_metadata_w_markers(folder, meta_data_df_plis_filtered, mg_cl_dict_final_sorted_filtered_fn):
+def update_metadata_cluster_labels(linkage_cluster_order, meta_data_df_plis):
+    '''take plis sorted metadata, rename IDS to be sequential for aesthetics down the road'''
+    mg_cl_conv_dict = {old_key:new_key  for new_key, old_key in enumerate(linkage_cluster_order, start=1)}
+    print (mg_cl_conv_dict)
+    tmp = np.array(meta_data_df_plis.loc['cluster_label'])
+    print (np.unique(tmp))
+    tmp_c = [mg_cl_conv_dict[x] for x in tmp]
+    meta_data_df_plis.loc['cluster_label'] = tmp_c
+    linkage_cluster_order_updated = np.arange(1,len(linkage_cluster_order)+1)
+    return meta_data_df_plis, linkage_cluster_order_updated
+
+def update_metadata_w_markers(folder, meta_data_df_plis_filtered, mg_cl_dict_final_fn, cell_class, write_to_file = False):
     '''updates metadata with markers from cell comp analysis'''
     meta_data_df_plis_filtered_markers = meta_data_df_plis_filtered.copy()
-    with open(folder + mg_cl_dict_final_sorted_filtered_fn) as json_data:
-        mg_cl_dict_final_sorted_filtered = json.load(json_data)
-    mg_cl_dict_final_sorted_filtered = {int(k):v for k,v in mg_cl_dict_final_sorted_filtered.items()}
+    with open(folder + mg_cl_dict_final_fn) as json_data:
+        mg_cl_dict_final = json.load(json_data)
+    mg_cl_dict_final_sorted_filtered = {int(k):v for k,v in mg_cl_dict_final.items()}
     m_list = []
     for v in np.array(meta_data_df_plis_filtered.loc['cluster_label']):
         m = mg_cl_dict_final_sorted_filtered[v]
@@ -900,7 +912,10 @@ def update_metadata_w_markers(folder, meta_data_df_plis_filtered, mg_cl_dict_fin
     #build marker row
     markers = pd.DataFrame(m_list, columns = meta_data_df_plis_filtered.columns, index = ['markers'])
     meta_data_df_plis_filtered_markers = pd.concat([meta_data_df_plis_filtered, markers])
-
+    if write_to_file:
+        #write updated metadata to file
+        file = cell_class + 'meta_data_df_plis_filtered_markers_' + today
+        meta_data_df_plis_filtered_markers.to_json(folder+file+'.json')
     return meta_data_df_plis_filtered_markers
 
 def get_boolean_vecs(meta_data_df):
@@ -1332,39 +1347,70 @@ def drop_clusters(cl_mg_dict,gene_list = None):
     #print (clusters_to_drop)
     return (clusters_to_drop)
 
-def filter_heatmap_elements(clusters_to_drop,linkage_cluster_order,df_marker_log_and_std,meta_data_df_plis,tg,tgfs, cluster_indices, gene_list = None):
+def filter_heatmap_elements(folder, cell_class, clusters_to_drop,df_marker_log_and_std,meta_data_df_plis, cluster_indices, cl_mg_dict, save_to_file = False):
     '''using clusters to drop list, filter heatmap elements, return each as [element]_filtered'''
-    linkage_cluster_order_filtered = [x for x in linkage_cluster_order if x not in clusters_to_drop]
+    #linkage_cluster_order_filtered = [x for x in linkage_cluster_order if x not in clusters_to_drop]
+    linkage_cluster_order = cl_mg_dict.keys()
+    for c in clusters_to_drop:
+        cl_mg_dict.pop(c)
+    linkage_cluster_order_filtered_tmp = cl_mg_dict.keys()    
+    #print ('lco filtered', linkage_cluster_order_filtered)
+    #print ('length lco filtered', len(linkage_cluster_order_filtered))
     #only works on first element in gene list, if gene list is longer than 1 element, need to manually add "and gene_list[i]" below..
-    tg_filtered = [x for x in tg if len(x)>0] #and gene_list[0] not in x]
-    tgfs_filtered = [x for x in tgfs if len(x)>1] #and gene_list[0] not in x]
-    
+    #tg_filtered = [x for x in tg if len(x)>0 and gene_list[0] not in x]
+    tg_filtered = list(cl_mg_dict.values())
+    tgfs_filtered = get_tgfs_from_tg(tg_filtered)
+
     filtered_index = [item for sublist in tg_filtered for item in sublist]
     df_marker_log_and_std_filtered = df_marker_log_and_std.copy()
     meta_data_df_plis_filtered = meta_data_df_plis.copy()
-    
-    mask = meta_data_df_plis_filtered.loc['cluster_label'].apply(lambda x: x not in clusters_to_drop)
+    #print ('before mask', np.unique(meta_data_df_plis_filtered.loc['cluster_label']))
+    #mask = meta_data_df_plis_filtered.loc['cluster_label'].apply(lambda x: x not in clusters_to_drop)
+    mask = meta_data_df_plis_filtered.loc['cluster_label'].apply(lambda x: x in linkage_cluster_order_filtered_tmp)
     meta_data_df_plis_filtered = meta_data_df_plis_filtered.loc[:,mask]
+    #print ('after mask', np.unique(meta_data_df_plis_filtered.loc['cluster_label']))
     df_marker_log_and_std_filtered = df_marker_log_and_std_filtered.loc[filtered_index,mask]
     
     change_indices_filtered = get_heatmap_cluster_borders(meta_data_df_plis_filtered)
+    print ('change_indices_filtered', change_indices_filtered)
+    print (len(change_indices_filtered))
     lc_ci_dict = dict(zip(linkage_cluster_order,cluster_indices))
-    cluster_indices_filtered_tmp = [v for k,v in lc_ci_dict.items() if k in linkage_cluster_order_filtered]
+    cluster_indices_filtered_tmp = [v for k,v in lc_ci_dict.items() if k in linkage_cluster_order_filtered_tmp]
+    #print ('len cluster_indices_filtered_tmp 0', len(cluster_indices_filtered_tmp[0]))
     
     #get updated pos
     tmp = 0
     pos_filtered_tmp = [] 
-    for idx, c in enumerate(zip(linkage_cluster_order_filtered,cluster_indices_filtered_tmp)):
-        #append mean of cell indices btwn tmp and tmp + length of cluster
-        pos_filtered_tmp.append(np.mean(np.arange(tmp,tmp+len(c[1]))))
+    # for idx, c in enumerate(zip(linkage_cluster_order_filtered,cluster_indices_filtered_tmp)):
+    #     append mean of cell indices btwn tmp and tmp + length of cluster
+    #     pos_filtered_tmp.append(np.mean(np.arange(tmp,tmp+len(c[1]))))
+    #     update pointer
+    #     tmp+=len(c[1])
+    for i,x in enumerate(change_indices_filtered):
+        pos_filtered_tmp.append(np.mean(np.arange(tmp,x)))
         #update pointer
-        tmp+=len(c[1])
+        tmp=x
+        #print (tmp)
     
+    #print (pos_filtered_tmp)
+
+    #reindex linkage cluster order, cluster labels
+    meta_data_df_plis_filtered, linkage_cluster_order_filtered = update_metadata_cluster_labels(linkage_cluster_order_filtered_tmp, meta_data_df_plis_filtered)
+    #update keys on cl_mg_dict
+    cl_mg_dict_filtered = dict(zip(linkage_cluster_order_filtered, list(cl_mg_dict.values())))
+    cl_mg_dict_filtered = {int(k): v for k, v in cl_mg_dict_filtered.items()}
     df_marker_log_and_std_col_filtered = pd.DataFrame(data = df_marker_log_and_std_filtered.to_numpy(), 
                                          index = df_marker_log_and_std_filtered.index,
                                         columns = list(meta_data_df_plis_filtered.loc['cluster_label',:]))
     
-    return df_marker_log_and_std_filtered, df_marker_log_and_std_col_filtered, meta_data_df_plis_filtered, pos_filtered_tmp, tg_filtered, tgfs_filtered, linkage_cluster_order_filtered,change_indices_filtered,lc_ci_dict, cluster_indices_filtered_tmp
+    #return df_marker_log_and_std_filtered, df_marker_log_and_std_col_filtered, meta_data_df_plis_filtered, pos_filtered_tmp, tg_filtered, tgfs_filtered, linkage_cluster_order_filtered,change_indices_filtered,lc_ci_dict, cluster_indices_filtered_tmp
+    if save_to_file:
+        with open(folder+cell_class+'_cl_mg_filtered_' + today +'.json', "w") as outfile: 
+            json.dump(cl_mg_dict_filtered, outfile)
+        file = cell_class + 'meta_data_df_plis_filtered_' + today
+        meta_data_df_plis_filtered.to_json(folder+file+'.json')
+    
+    return df_marker_log_and_std_filtered, df_marker_log_and_std_col_filtered, meta_data_df_plis_filtered, pos_filtered_tmp, tg_filtered, tgfs_filtered, linkage_cluster_order_filtered, linkage_cluster_order_filtered_tmp, change_indices_filtered, cl_mg_dict_filtered 
 
 def compute_fs_waterfall(marker_genes_sorted):
     '''autocomputes optimal fontsize for waterfall gene labeling on heatmap'''
@@ -1372,13 +1418,28 @@ def compute_fs_waterfall(marker_genes_sorted):
     fs_w = round(fs,1)
     return fs_w
 
+def update_tsne_params(arr,labels,linkage_cluster_order_og,linkage_cluster_order,linkage_cluster_order_filtered_tmp):
+    '''creates conversion dict using original linkage cluster order (og) and linkage cluster order to update labels from tsne arr'''
+    conv_dict = dict(zip(linkage_cluster_order_og,linkage_cluster_order))
+    arr_updated = arr.copy()
+    new_labels = arr_updated['labels'].map(conv_dict)
+    arr_updated['labels'] = new_labels
+    labels_updated = np.array([conv_dict[x] for x in labels])
+    #get filtered version
+    mask = arr_updated['labels'].apply(lambda x: x in linkage_cluster_order_filtered_tmp)
+    arr_updated_filtered = arr_updated.loc[mask,:]
+    labels_updated_filtered = labels_updated[mask]
+    return arr_updated_filtered, labels_updated_filtered
+
 def plot_filtered_tsne(arr,labels,cluster_labels,metadata_df,drop_clusters_list,folder, plot_title,savefig=True):
-    '''plot filtered tsne plot'''
+    '''plot filtered tsne plot, note: number metadata columns should match arr shape. use prefiltered metadata.'''
     ids_filtered = np.sort(pd.unique(metadata_df.loc['cluster_label']))
     #arr.insert(2, 'labels',labels)
     arr_sorted = arr.sort_values(by = 'labels')
+    print ('arr sortted shape', arr_sorted.shape)
     arr_filtered = arr_sorted.copy()
     arr_filtered = arr_filtered[arr_filtered['labels'].isin(ids_filtered)]
+    print ('arr filtered shape', arr_filtered.shape)
     arr_xy = arr.drop('labels', axis = 'columns')
     fig,ax = plt.subplots(figsize = (15,15))
     #ax.scatter(arr_filtered['tsne-1'], arr_filtered['tsne-2'], s = 2)
@@ -1394,7 +1455,8 @@ def plot_filtered_tsne(arr,labels,cluster_labels,metadata_df,drop_clusters_list,
     plt.yticks([])
     plt.title(plot_title)
     #print (len(set(labels)))
-    labels_filtered = [label for label in set(labels) if label not in drop_clusters_list]
+    labels_filtered = set(labels)
+    #labels_filtered = [label for label in set(labels) if label not in drop_clusters_list]
     #print (len(set(labels_filtered)))
     for i,cl in enumerate(zip(labels_filtered,cluster_labels)):
         cluster_median = arr_xy[labels == cl[0]].median()

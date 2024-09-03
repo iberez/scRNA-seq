@@ -41,14 +41,20 @@ import dimorph_processing as dp
 
 today = str(date.today())
 
-def process_amy_data_class(amy_df,amy_metadata_df,IEG_list,cell_class = None):
+def process_amy_data_class(amy_df,amy_metadata_df,IEG_list, sex_gene_list, cell_class = None):
     '''gets columns containting speicfied class, processes and prepares for comparision with sd_data, return processed data and metadata'''
-    #isolate columns of specified class
-    _cols = [c for c,x in zip(amy_df.loc['celltype'].index,np.array(amy_df.loc['celltype'])) if cell_class in x]
-    amy_df_ = amy_df.loc[:,_cols]
-    amy_df__expr = amy_df_.iloc[4:,:]
-    #get associated metadata
-    amy_metadata_df_ = amy_metadata_df.loc[:,_cols]
+    if type(cell_class) == str:    
+        #isolate columns of specified class
+        print ('processing for single class')
+        _cols = [c for c,x in zip(amy_df.loc['celltype'].index,np.array(amy_df.loc['celltype'])) if cell_class in x]
+        #print (_cols)
+        amy_df_ = amy_df.loc[:,_cols]
+        amy_df__expr = amy_df_.iloc[4:,:]
+        #get associated metadata
+        amy_metadata_df_ = amy_metadata_df.loc[:,_cols]
+    if type(cell_class) == list:
+        print ('list detected')
+
     #add cluster label row to metadata
     amy__cluster_labels = np.array(amy_metadata_df_.loc['celltype'].apply(lambda x: int(re.search(r'-(\d+)-', x).group(1))))
     amy_metadata_df_.loc['cluster_label'] = amy__cluster_labels
@@ -57,6 +63,8 @@ def process_amy_data_class(amy_df,amy_metadata_df,IEG_list,cell_class = None):
     amy_df__expr = amy_df__expr[~amy_df__expr.index.duplicated(keep='first')]
     #remove IEG genes
     amy_df__expr = dp.gene_remover(IEG_list, amy_df__expr)
+    #remove sex genes
+    amy_df__expr = dp.gene_remover(sex_gene_list, amy_df__expr)
     #ensure all values are ints
     amy_df__expr = amy_df__expr.astype('int')
     #process using standard workflow/functions from dimorph_processing.py
@@ -92,12 +100,13 @@ def get_df_gene_intersection(sd_df,amy_df, IEG_list):
     sd_df_i = sd_df.reindex(index = intersected_gene_ind)
     return amy_df_i,sd_df_i
 
-def plot_correlation(sd_avgs,amy_avgs,lco):
+def plot_correlation(sd_avgs,amy_avgs):
     '''takes in sd_avgs, amy_avgs, and lco (linkage cluster order) for sd_avgs, computes correlation matrix and plots interactive heatmap '''
-    sd_avgs_lco = sd_avgs.reindex(columns=lco)
+    #sd_avgs_lco = sd_avgs.reindex(columns=lco)
+    sd_avgs_lco = sd_avgs
     # Initialize an empty dataframe to hold the correlation coefficients
     corr_matrix_manual_alt_lco = pd.DataFrame(index=amy_avgs.columns, columns=sd_avgs_lco.columns)
-
+    #corr_matrix_manual_alt_lco = pd.DataFrame(index=amy_avgs.columns, columns=np.arange(1, len(sd_avgs_lco.columns)+1))
     # Compute the correlation coefficients (note we could also have just taken transpose of corr_matrix_manual)
     for col1 in amy_avgs.columns:
         for col2 in sd_avgs_lco.columns:
@@ -109,7 +118,8 @@ def plot_correlation(sd_avgs,amy_avgs,lco):
         heatmap_argmax_df_alt_lco.loc[i,:] = (np.argmax(corr_matrix_manual_alt_lco.loc[i,:]),np.max(corr_matrix_manual_alt_lco.loc[i,:]))
     heatmap_argmax_df_alt_lco.sort_values(by = 'argmax')
     corr_matrix_manual_alt_lco_sorted = corr_matrix_manual_alt_lco.reindex(index = heatmap_argmax_df_alt_lco.sort_values(by = 'argmax').index)
-
+    #make columns seq
+    #corr_matrix_manual_alt_lco_sorted.columns = np.arange(1, len(sd_avgs_lco.columns)+1)
     pos_ylabel = [(pos,ylabel) for pos,ylabel in zip(np.arange(len(corr_matrix_manual_alt_lco_sorted.index)),corr_matrix_manual_alt_lco_sorted.index)]
     heatmap2 = corr_matrix_manual_alt_lco_sorted.reset_index().drop(columns='index').hvplot.heatmap(title='Arg Max sorted Amy_avgs (y) correlated with Sd_avgs_linkage_sorted (x)',  
                                                                                                     yticks = corr_matrix_manual_alt_lco_sorted.index,
@@ -140,16 +150,18 @@ def amy_gene_spell_checker(amy_df,amy_metadata_df):
     return error_genes, all_m_u
 
 def correct_error_genes(error_genes,correct_gene_names, all_m_u):
-    for eg,cg in zip(error_genes,correct_gene_names):
-        for i,x in enumerate(all_m_u):
-            for j,g in enumerate(x):
-                if g == eg:
-                    #print (all_m_u[i][j])
-                    #if first and last letter of eg matches cg, replace with cg
-                    if cg[:1] == g[:1] and cg[-1:] == g[-1:]:
-                        #print (cg)
+    for eg in error_genes:
+        for cg in correct_gene_names:
+            for i,x in enumerate(all_m_u):
+                for j,g in enumerate(x):
+                    if g == eg:
+                        print (g)
                         #print (all_m_u[i][j])
-                        all_m_u[i][j] = cg
+                        #if first and last letter of eg matches cg, replace with cg
+                        if cg[:1] == g[:1] and cg[-1:] == g[-1:]:
+                            #print (cg)
+                            print (all_m_u[i][j])
+                            all_m_u[i][j] = cg
     return all_m_u
 
 def gene_explorer(gene,dataset_name,df,metadata_df,output_folder= None,markers = False, savefig = False):
@@ -222,10 +234,12 @@ def get_max_markers(cl_mg_dict,sd_avgs,cluster_id):
 def create_mg_cl_dict_final(cl_mg_dict,sd_shared_cl_mg_dict):
     '''creates final cl_mg_dict, using shared_cl_mg_dict keys if present, otherwise just use first two from cl_mg_dict'''
     mg_cl_dict_final = {}
+    #make keys of shared dict integers to match those in cl_mg_dict...
+    sd_shared_cl_mg_dict_tmp = {int(k): v for k, v in sd_shared_cl_mg_dict.items()}
     for k,v in cl_mg_dict.items():
-        #use shared keys
-        if k in sd_shared_cl_mg_dict.keys():
-            mg_cl_dict_final.update({int(k):sd_shared_cl_mg_dict[k]})
+        #print (k) #use shared keys
+        if k in sd_shared_cl_mg_dict_tmp.keys():
+            mg_cl_dict_final.update({int(k):sd_shared_cl_mg_dict_tmp[k]})
         else:
             mg_cl_dict_final.update({int(k):cl_mg_dict[k][:2]})
     
@@ -249,14 +263,14 @@ def build_corr_table_shared_top(heatmap_argmax_df_alt_lco,corr_matrix_manual_alt
     connector_df_alt_lco_marker.insert(1, 'amy_marker',[cluster_2_markers_dict[v] for v in np.array(connector_df_alt_lco.loc[:,'index'])])
     connector_df_alt_lco_marker_shared = connector_df_alt_lco_marker.copy() 
     connector_df_alt_lco_marker_shared.insert(5, 'sd_shared_marker', '')
+    #print (connector_df_alt_lco_marker_shared)
     #1st order to get sd makers - get shared overlaps with amy data
     for i in np.array(connector_df_alt_lco_marker.loc[:,'index']):
         corr_cluster = np.array(connector_df_alt_lco_marker.loc[connector_df_alt_lco.loc[:,'index']==i,'corr_cluster'])
         #print (corr_cluster[0])
-        
-        if str(corr_cluster[0]) in cl_mg_dict_updated.keys():
+        if corr_cluster[0] in cl_mg_dict_updated.keys():
             #print ('matching key!')
-            mgs_og = cl_mg_dict_updated[str(corr_cluster[0])]
+            mgs_og = cl_mg_dict_updated[corr_cluster[0]]
         #hack since gaba_cl_mg_dict missing a few keys. need to debug compute_marker_genes function.
         #else:
             #mgs_og = []
@@ -275,6 +289,7 @@ def build_corr_table_shared_top(heatmap_argmax_df_alt_lco,corr_matrix_manual_alt
             #connector_df_alt_lco_marker_shared.loc[connector_df_alt_lco_marker.loc[:,'index']==i,'sd_shared_marker'] = shared_genes
     connector_df_alt_lco_marker_shared_top = connector_df_alt_lco_marker_shared.copy()
     connector_df_alt_lco_marker_shared_top.insert(6, 'sd_shared_top_marker', '')
+    
     #2nd pass - for all corr cluster with 1 sd_shared marker, get top marker from sd data cluster/marker dict. if already 2 markers, skip
     current_cluster = [] #track cluster number
 
@@ -282,12 +297,12 @@ def build_corr_table_shared_top(heatmap_argmax_df_alt_lco,corr_matrix_manual_alt
         #get sd_shared_marker list
         l = list(connector_df_alt_lco_marker_shared.loc[connector_df_alt_lco.loc[:,'index']==i,'sd_shared_marker'])[0]
         corr_cluster = np.array(connector_df_alt_lco_marker.loc[connector_df_alt_lco.loc[:,'index']==i,'corr_cluster'])
-        
-        if len(l)==1 and len(cl_mg_dict_updated[str(corr_cluster[0])])>=2:
+        #print (corr_cluster)
+        if len(l)==1 and len(cl_mg_dict_updated[corr_cluster[0]])>=2:
             #use next most specific gene from the dict
             l_cp = l.copy()
             ng_l = []
-            for x in cl_mg_dict_updated[str(corr_cluster[0])]:
+            for x in cl_mg_dict_updated[corr_cluster[0]]:
                 if x not in l_cp:
                     ng_l.append(x)
             #print (ng)
@@ -325,24 +340,32 @@ def generate_amy_labels_df(connector_df_alt_lco_marker_shared_top, corr_matrix_m
     amy_labels_df = pd.DataFrame(data = amy_labels, index = corr_matrix_manual_alt_lco.index)
     return amy_labels_df, amy_labels
 
-def generate_sd_labels_df(corr_matrix_manual_alt_lco,mg_cl_dict_final):
-    sd_labels_df = pd.DataFrame(data = corr_matrix_manual_alt_lco.columns, columns = ['lco_index'])
-    sd_labels_df.insert(1, column= 'sd_label', value='')
-    sd_labels_df['sd_label'] = sd_labels_df['sd_label'].astype(object)
-    for i,v in enumerate(sd_labels_df['lco_index']):
-        if v in mg_cl_dict_final.keys():
-            #print (gaba_mg_cl_dict_final[i])
-            l = mg_cl_dict_final[v]
-            sd_labels_df.at[i,'sd_label'] = l
+def generate_sd_labels_df(mg_cl_dict_final):
+    
+    
+    # sd_labels_df = pd.DataFrame(data = corr_matrix_manual_alt_lco.columns, columns = ['lco_index'])
+    # #sd_labels_df = pd.DataFrame(data = np.arange(1, len(corr_matrix_manual_alt_lco.columns)+1), columns = ['lco_index'])
+    # mg_cl_dict_final_seq = {new_key: mg_cl_dict_final[old_key] for new_key, old_key in enumerate(mg_cl_dict_final.keys(), start=1)}
+    # mg_cl_conv_dict = {old_key:new_key  for new_key, old_key in enumerate(mg_cl_dict_final.keys(), start=1)}
+    # sd_labels_df.insert(1, column= 'sd_label', value='')
+    # sd_labels_df['sd_label'] = sd_labels_df['sd_label'].astype(object)
+    # for i,v in enumerate(sd_labels_df['lco_index']):
+    #     if v in mg_cl_dict_final_seq.keys():
+    #         #print (gaba_mg_cl_dict_final[i])
+    #         l = mg_cl_dict_final_seq[v]
+    #         sd_labels_df.at[i,'sd_label'] = l
+    # sd_labels_df['sd_label_complete'] = sd_labels_df.apply(lambda row: f"{row['lco_index']} {'-'.join(row['sd_label'])}", axis=1)
+    
+    # mg_cl_dict_final_sorted = {key:value for key, value in sorted(mg_cl_dict_final_seq.items(), key=lambda item: int(item[0]))}
+    # sd_labels = [f"{key} {'-'.join(value)}" for key, value in mg_cl_dict_final_sorted.items() if value]
+    sd_labels_df = pd.DataFrame(list(mg_cl_dict_final.items()), columns = ['lco_index','sd_label'])
     sd_labels_df['sd_label_complete'] = sd_labels_df.apply(lambda row: f"{row['lco_index']} {'-'.join(row['sd_label'])}", axis=1)
     
-    mg_cl_dict_final_sorted = {key:value for key, value in sorted(mg_cl_dict_final.items(), key=lambda item: int(item[0]))}
-    sd_labels = [f"{key} {'-'.join(value)}" for key, value in mg_cl_dict_final_sorted.items() if value]
-    return sd_labels_df, sd_labels, mg_cl_dict_final_sorted
+    return sd_labels_df 
 
 def plot_connector_plot_with_labels(connector_df_alt_lco_marker_shared_top, mg_cl_dict_final_sorted, sd_labels,amy_labels, folder, cell_class,savefig=False):
     fig,ax1 = plt.subplots(figsize = (20,20))
-    ax1.set_title('Amy Cluster-Markers Correlated to Sd Cluster-Markers (GABA)')
+    ax1.set_title('Amy Cluster-Markers Correlated to Sd Cluster-Markers: ' + str(cell_class))
 
     ax2 = ax1.twinx()
 
@@ -391,7 +414,6 @@ def plot_correlation_w_labels(corr_matrix_manual_alt_lco_sorted, sd_labels_df, a
     #hack to get sd labels on x axis - set columns of corr_matrix to the labels... using xticks = pos_xlabel, same method as y ticks produces blank plot..
     corr_matrix_manual_alt_lco_sorted_col_labeled = corr_matrix_manual_alt_lco_sorted.copy()
     corr_matrix_manual_alt_lco_sorted_col_labeled.columns = sd_labels_df['sd_label_complete']
-
     pos_ylabel = [(pos,ylabel) for pos,ylabel in zip(np.arange(len(corr_matrix_manual_alt_lco_sorted.index)),np.array(amy_labels_df.reindex(index = corr_matrix_manual_alt_lco_sorted.index)[0]))]
     #ylabel_w_idx = [str(i)+ ':'+ s for i,s in pos_ylabel]
     #pos_ylabel_w_idx = [(pos,ylabel) for pos,ylabel in zip(np.arange(len(corr_matrix_manual_alt_lco_sorted.index)),ylabel_w_idx)]

@@ -65,3 +65,4 @@ def compute_sex_stats(meta_data_df):
         sex_stats_df.loc[m,'num_mice'] = n_mice
     
     return sex_stats_df
+

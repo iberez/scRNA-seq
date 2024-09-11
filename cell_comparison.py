@@ -43,21 +43,29 @@ today = str(date.today())
 
 def process_amy_data_class(amy_df,amy_metadata_df,IEG_list, sex_gene_list, cell_class = None):
     '''gets columns containting speicfied class, processes and prepares for comparision with sd_data, return processed data and metadata'''
-    if type(cell_class) == str:    
+    if type(cell_class) == str and cell_class in ['GABA','VGLUT1','VGLUT2']:    
         #isolate columns of specified class
-        print ('processing for single class')
+        print ('processing for single class: ', cell_class)
         _cols = [c for c,x in zip(amy_df.loc['celltype'].index,np.array(amy_df.loc['celltype'])) if cell_class in x]
         #print (_cols)
         amy_df_ = amy_df.loc[:,_cols]
         amy_df__expr = amy_df_.iloc[4:,:]
         #get associated metadata
         amy_metadata_df_ = amy_metadata_df.loc[:,_cols]
-    if type(cell_class) == list:
-        print ('list detected')
+        #add cluster label row to metadata
+        amy__cluster_labels = np.array(amy_metadata_df_.loc['celltype'].apply(lambda x: int(re.search(r'-(\d+)-', x).group(1))))
+        amy_metadata_df_.loc['cluster_label'] = amy__cluster_labels
+    else:
+        print ('non neuronal')
+        #_cols = [c for c,x in zip(amy_df.loc['celltype'].index,np.array(amy_df.loc['celltype'])) if cell_class in x]
+        _cols = amy_df.loc['celltype'].index
+        #print (_cols)
+        amy_df_ = amy_df.loc[:,_cols]
+        amy_df__expr = amy_df_.iloc[4:,:]
+        #get associated metadata
+        amy_metadata_df_ = amy_metadata_df.loc[:,_cols]
+        #add cluster label row to metadata
 
-    #add cluster label row to metadata
-    amy__cluster_labels = np.array(amy_metadata_df_.loc['celltype'].apply(lambda x: int(re.search(r'-(\d+)-', x).group(1))))
-    amy_metadata_df_.loc['cluster_label'] = amy__cluster_labels
     #remove duplicate genes
     print ('removing # duplicate gene rows: ', amy_df__expr[amy_df__expr.index.duplicated()].shape[0])
     amy_df__expr = amy_df__expr[~amy_df__expr.index.duplicated(keep='first')]

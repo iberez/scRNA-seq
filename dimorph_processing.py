@@ -883,7 +883,7 @@ def get_cluster_labels(folder,sd_labels_df_fn):
     #         print ('removing id: ', l_id)
     #         corr_labels_filtered.pop(i)
     corr_labels = [l for l in list(sd_labels_df.loc[:,'sd_label_complete'])]
-    cluster_labels = [x.split(' ')[1] for x in corr_labels]
+    cluster_labels = [x.split(' ')[1] if ' ' in x else x for x in corr_labels]
     return corr_labels, cluster_labels
 
 def update_metadata_cluster_labels(linkage_cluster_order, meta_data_df_plis):
@@ -1221,7 +1221,7 @@ def plot_marker_mean_std(marker, mu_,std_, linkage_cluster_order):
     plt.xticks(ticks = np.arange(len(linkage_cluster_order)),labels=linkage_cluster_order)
     plt.show()
 
-def plot_marker_on_tsne(tsne_df,expr_df,marker_name, nn=False):
+def plot_marker_on_tsne(tsne_df,expr_df,marker_name,labels, cluster_labels, offset = None, nn=False):
     
     x = np.array(tsne_df['tsne-1'])
     y = np.array(tsne_df['tsne-2'])
@@ -1239,7 +1239,8 @@ def plot_marker_on_tsne(tsne_df,expr_df,marker_name, nn=False):
 
     else:
         #non-neuronal
-        z = marker_name
+        #z = marker_name
+        z = np.array(expr_df.loc[marker_name,:])
         fig, ax = plt.subplots( figsize = (9,6))
         scatter = ax.scatter(x, y, c = z , cmap = 'seismic' , s = 1)
         # Create colorbar
@@ -1247,7 +1248,21 @@ def plot_marker_on_tsne(tsne_df,expr_df,marker_name, nn=False):
         sm.set_array(z)
         cbar = fig.colorbar(sm)
         cbar.set_label('Expr')
-        plt.title('Log/Standerdized Nonneuronal Expression (Summed Exclude Markers)')
+        plt.title(f"{marker_name}")
+        #plt.title('Log/Standerdized Nonneuronal Expression (Summed Exclude Markers)')
+
+    arr_xy = tsne_df.drop('labels', axis = 'columns')
+    labels_filtered = set(labels)
+    #labels_filtered = [label for label in set(labels) if label not in drop_clusters_list]
+    #print (len(set(labels_filtered)))
+    for i,cl in enumerate(zip(labels_filtered,cluster_labels)):
+        cluster_median = arr_xy[labels == cl[0]].median()
+        #add offset
+        cluster_median.iloc[0]+=offset
+        #print (cluster_median)
+        #print (np.array(cluster_median[0]))
+        ax.annotate(text = cl[1].split(' ')[1], xy=cluster_median, fontsize=8, color='Black',
+                            ha='center', va='center', bbox=dict(boxstyle='round', alpha=0.2))
 
     plt.xticks([])
     plt.yticks([])
@@ -1474,4 +1489,16 @@ def plot_filtered_tsne(arr,labels,cluster_labels,metadata_df,drop_clusters_list,
     '''
     if savefig:
         plt.savefig(folder + 'filtered_tsne_' + plot_title + '_' + today + '.png', dpi = 1200, bbox_inches='tight')
+    plt.show()
+
+def plot_genes_in_cluster(df,meta_data_df,gene_list, c_label = None,ls=False):
+    '''Used to check expression of markers within a cluster. Takes in a gene expression dataframe, filtered plis sorted metadata with cluster labels (e.g. 1,2,3...), and speicifed cluster label ,
+    plots as simple line graph. If ls == True, assumes raw expression data input, performs log and standerization'''
+    if ls:
+        status_df = intialize_status_df()
+        df_log_std_arr,status_df = log_and_standerdize_df(df,status_df)
+        df = pd.DataFrame(data = df_log_std_arr.T, index = df.index, columns=df.columns)
+    tmp = df.loc[gene_list,:]
+    tmp = tmp.iloc[:,np.where(meta_data_df.loc['cluster_label']==c_label)[0]]
+    tmp.T.plot(kind = 'line', xticks = [])
     plt.show()

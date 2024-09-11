@@ -49,7 +49,8 @@ def compute_cluster_sex_stats(meta_data_df):
     m_list = np.unique(meta_data_df.loc['markers'])
     #build sex stats df
     sex_stats_df = pd.DataFrame(columns = ['markers','Breeder-F','Breeder-M' ,'Naïve-F' , 'Naïve-M','num_sample_ids','sample_ids'])
-    sex_stats_df['markers'] = np.unique(meta_data_df.loc['markers'])
+    marker_genes,idx = np.unique(meta_data_df.loc['markers'],return_index=True)
+    sex_stats_df['markers'] = marker_genes[np.argsort(idx)]
     sex_stats_df = sex_stats_df.set_index('markers')
     #populate sex stats df
     for m in m_list:
@@ -105,7 +106,7 @@ def get_optimal_ax_lim(x_ser,y_ser):
     opt_lim = round(np.max(np.abs([min_x,max_x,min_y,max_y])))
     return opt_lim
 
-def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,threshold_prc, r_bn,r_mf,cell_class,folder, savefig = False, write_to_file = False):
+def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,threshold_prc, r_bn,r_mf, cl_mg_dict, cell_class,folder, savefig = False, write_to_file = False):
     '''Inputs
     Parameters
     ----------
@@ -131,6 +132,7 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
         log and meaned expression for each group, genes as rows'''
     #marker gene expression within a cluster
     c_expr = df.loc[:,meta_data_df.loc['cluster_label']==cluster_label]
+    print (c_expr.shape)
     c_expr_bool = c_expr.mask(c_expr>0, other = 1)
 
     gene_sum =  np.array(c_expr_bool.sum(axis=1))
@@ -142,12 +144,20 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
             genes_to_keep_ind.append(i)
     #update c_expr keeping only genes above threshold
     c_expr = c_expr.iloc[genes_to_keep_ind,:]
+    print (c_expr.shape)
+    n_genes = c_expr.shape[0]
+    n_cells = c_expr.shape[1]
     c_metadata = meta_data_df.loc[:,meta_data_df.loc['cluster_label']==cluster_label]
     #isolated expression of 4 groups within cluster
     N_f_expr = c_expr.loc[:,c_metadata.loc['Group',:]=='Naïve-F']
     B_f_expr = c_expr.loc[:,c_metadata.loc['Group',:]=='Breeder-F']
     N_m_expr = c_expr.loc[:,c_metadata.loc['Group',:]=='Naïve-M']
     B_m_expr = c_expr.loc[:,c_metadata.loc['Group',:]=='Breeder-M']
+    #get counts of each category
+    N_f_expr_cnts = N_f_expr.shape[1]
+    B_f_expr_cnts = B_f_expr.shape[1]
+    N_m_expr_cnts = N_m_expr.shape[1]
+    B_m_expr_cnts = B_m_expr.shape[1]
     #take mean of log2+1 for each gene
     N_f_expr_mlog = np.mean(np.log2(N_f_expr+1),axis = 1)
     B_f_expr_mlog = np.mean(np.log2(B_f_expr+1),axis = 1)
@@ -162,10 +172,10 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     d_bn = np.sqrt(delta_B_N_m**2 + delta_B_N_f**2)
     
     fig,ax = plt.subplots()
-    ax.set_title(cell_class + ' Delta Breeder-Naive, Cluster: ' + str(cluster_label))
+    ax.set_title(cell_class + ' Δ Breeder-Naive, Cluster: ' + str(cluster_label) + '-' + ' '.join(cl_mg_dict[str(cluster_label)]))
     ax.scatter(delta_B_N_m,delta_B_N_f, s=1)
-    ax.set_xlabel('delta_B_N_m')
-    ax.set_ylabel('delta_B_N_f')
+    ax.set_xlabel(f'Δ_B_m({B_m_expr_cnts})_N_m({N_m_expr_cnts})')
+    ax.set_ylabel(f'Δ_B_f({B_f_expr_cnts})_N_f({N_f_expr_cnts})')
     plt.axvline(color = 'grey')
     plt.axhline(y=0, color = 'grey')
     plt.axline((0, 0), slope=1, color="grey", linestyle='--')
@@ -173,18 +183,21 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     circle = plt.Circle((0, 0), r_bn, color='grey', fill=False, linestyle='--')
     plt.gca().add_patch(circle)
     opt_lim = get_optimal_ax_lim(delta_B_N_m,delta_B_N_f)
-
+    #print (opt_lim)
     ax.set_xlim([-opt_lim,opt_lim])
     ax.set_ylim([-opt_lim,opt_lim])
+    fs = 5
     
-    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.1*opt_lim), 'thresh = '+str(threshold_prc) + '%')
-    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.2*opt_lim), 'r_bn = '+str(r_bn))
-    
+    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.1*opt_lim), 'thresh = '+str(threshold_prc) + '%', fontsize = fs)
+    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.15*opt_lim), 'r_bn = '+str(r_bn), fontsize = fs)
+    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.2*opt_lim), 'n_genes = '+str(n_genes), fontsize = fs)
+    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.25*opt_lim), 'n_cells = '+str(n_cells), fontsize = fs)
+
     TEXTS = []
     for i, txt in enumerate(list(delta_B_N_m.index)):
         if d_bn.iloc[i] > r_bn:
             #standard labeling
-            ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = 5)
+            ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs)
             #if txt.startswith('S'):
             #labeling using adjust text to repelling algo
             #TEXTS.append(ax.text(delta_B_N_m.iloc[i], delta_B_N_f.iloc[i],txt, fontsize = 7))
@@ -211,28 +224,31 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     d_mf = np.sqrt(delta_m_f_N**2 + delta_m_f_B**2)
     #plot first 10
     fig,ax = plt.subplots()
-    ax.set_title(cell_class + ' Delta Male-Female, Cluster: '+ str(cluster_label))
+    ax.set_title(cell_class + ' Δ Male-Female, Cluster: '+ str(cluster_label)  + '-' + ' '.join(cl_mg_dict[str(cluster_label)]))
     ax.scatter(delta_m_f_N,delta_m_f_B, s=1)
     plt.axvline(color = 'grey')
     plt.axhline(y=0, color = 'grey')
     plt.axline((0, 0), slope=1, color="grey", linestyle='--')
-    ax.set_xlabel('delta_m_f_N')
-    ax.set_ylabel('delta_m_f_B')
+    ax.set_xlabel(f'Δ_m_N({N_m_expr_cnts})_f_N({N_f_expr_cnts})')
+    ax.set_ylabel(f'Δ_m_B({B_m_expr_cnts})_f_B({B_f_expr_cnts})')
     # Draw a circle with the specified radius
     circle = plt.Circle((0, 0), r_mf, color='grey', fill=False, linestyle='--')
     plt.gca().add_patch(circle)
     opt_lim = get_optimal_ax_lim(delta_m_f_N,delta_m_f_B)
-
+    #print (opt_lim)
     ax.set_xlim([-opt_lim,opt_lim])
     ax.set_ylim([-opt_lim,opt_lim])
+    
 
-    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.1*opt_lim), 'thresh = '+str(threshold_prc) + '%')
-    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.2*opt_lim), 'r_mf = '+str(r_mf))
+    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.1*opt_lim), 'thresh = '+str(threshold_prc) + '%',fontsize = fs)
+    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.15*opt_lim), 'r_mf = '+str(r_mf), fontsize = fs)
+    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.2*opt_lim), 'n_genes = '+str(n_genes),fontsize = fs)
+    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.25*opt_lim), 'n_cells = '+str(n_cells), fontsize = fs)
     
     for i, txt in enumerate(list(delta_B_N_m.index)):
         if d_mf.iloc[i] > r_mf:
             #standard labeling
-            ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = 5)
+            ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs)
             #labeling using adjust text to repelling algo
             #TEXTS.append(ax.text(delta_B_N_m.iloc[i], delta_B_N_f.iloc[i],txt, fontsize = 7))
                 #TEXTS.append(ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = 7))   

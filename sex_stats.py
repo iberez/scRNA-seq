@@ -36,6 +36,7 @@ from holoviews import opts
 import panel as pn
 import bokeh
 from bokeh.resources import INLINE
+from scipy.stats import mannwhitneyu, false_discovery_control, wilcoxon
 
 import dimorph_processing as dp
 
@@ -47,6 +48,7 @@ def compute_cluster_sex_stats(meta_data_df):
     sample_id = np.unique(meta_data_df.loc['SampleID'])
     groups = np.unique(meta_data_df.loc['Group'])
     m_list = np.unique(meta_data_df.loc['markers'])
+    c_label = np.unique(meta_data_df.loc['cluster_label'])
     #build sex stats df
     sex_stats_df = pd.DataFrame(columns = ['markers','Breeder-F','Breeder-M' ,'Naïve-F' , 'Naïve-M','num_sample_ids','sample_ids'])
     marker_genes,idx = np.unique(meta_data_df.loc['markers'],return_index=True)
@@ -153,6 +155,9 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     B_f_expr = c_expr.loc[:,c_metadata.loc['Group',:]=='Breeder-F']
     N_m_expr = c_expr.loc[:,c_metadata.loc['Group',:]=='Naïve-M']
     B_m_expr = c_expr.loc[:,c_metadata.loc['Group',:]=='Breeder-M']
+    expr_raw_df = pd.concat([N_f_expr,B_f_expr,N_m_expr,B_m_expr], axis = 1)
+    expr_raw_df = expr_raw_df.rename(columns={0: "N_f", 1: "B_f",2:"N_m", 3:"B_m" })
+    c_metadata_df = c_metadata.reindex(columns = expr_raw_df.columns)
     #get counts of each category
     N_f_expr_cnts = N_f_expr.shape[1]
     B_f_expr_cnts = B_f_expr.shape[1]
@@ -275,5 +280,141 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
         #write updated metadata to file
         file = cell_class + '_expr_mlog_df_c' + str(cluster_label)
         expr_mlog_df.to_json(folder + 'data/' +file+'.json')
-
+        file2 = cell_class + '_expr_raw_df_c' + str(cluster_label)
+        expr_raw_df.to_json(folder + 'data/' +file2+'.json')
+        file3 = cell_class + '_metadata_df_c' + str(cluster_label)
+        c_metadata_df.to_json(folder + 'data/' +file3+'.json')
     return expr_mlog_df
+
+def get_plot_labels(mg_cl_dict):
+    '''formats key/values into single labels used for plots in sex stats nb'''
+    labels = [f"{key} {value}" for key, value in mg_cl_dict.items()]
+    formatted_labels = []
+    # Iterate through each element in the list
+    for item in labels:
+        # Split the string into the number and the list part
+        number, string_list = item.split(" ", 1)
+        
+        # Remove the brackets and quotes from the string list, and split into separate items
+        string_list = string_list.strip("[]").replace("'", "").split(", ")
+        
+        # Join the strings with a hyphen
+        joined_string = "-".join(string_list)
+        
+        # Format the result as "number joined_string" and append to the result list
+        formatted_labels.append(f"{number} {joined_string}")
+    
+    return formatted_labels
+
+def do_u_test_w_fdr(expr1,expr2):
+    '''Computes mann whiteney u test for each gene (row) between expr1 and expr2. returns results in dataframe.'''
+    #construct df to store results of mann whitney test for every gene
+    u_test_df = pd.DataFrame(index = expr1.index, columns = ['U','p','p_adj'])
+    #do mann whiteney for every gene
+    for i in u_test_df.index:
+        U, p = mannwhitneyu(expr1.loc[i,:],expr2.loc[i,:], alternative='two-sided', method="exact")
+        u_test_df.loc[i,'U'] = U
+        u_test_df.loc[i,'p'] = p
+        #compute p_adj using false discovery rate
+    u_test_df.loc[:,'p_adj'] = false_discovery_control(np.array(u_test_df['p']).astype(float), method = 'bh')
+    
+    return u_test_df
+
+def run_stat_test(delta_data_folder, index ,output_folder, cell_class, write_to_file = False):
+    '''wraps do_u_test_w_fdr(), stores results in dataframe in output folder'''
+    with open (delta_data_folder + cell_class+ '_expr_raw_df_c'+str(index)+ '.json') as json_data:
+        expr_raw_df = json.load(json_data)
+    with open (delta_data_folder + cell_class + '_metadata_df_c' +str(index) + '.json') as json_data:
+        metadata_df = json.load(json_data)
+    
+    expr_raw_df = pd.DataFrame.from_dict(expr_raw_df, orient='columns')
+    metadata_df = pd.DataFrame.from_dict(metadata_df, orient='columns')
+    
+    N_f_expr = expr_raw_df.loc[:,metadata_df.loc['Group',:]=='Naïve-F']
+    B_f_expr = expr_raw_df.loc[:,metadata_df.loc['Group',:]=='Breeder-F']
+    N_m_expr = expr_raw_df.loc[:,metadata_df.loc['Group',:]=='Naïve-M']
+    B_m_expr = expr_raw_df.loc[:,metadata_df.loc['Group',:]=='Breeder-M']
+    
+    #do mann whiteney u test for each axis
+    U_test_BN_m = do_u_test_w_fdr(B_m_expr,N_m_expr)
+    U_test_BN_f = do_u_test_w_fdr(B_f_expr,N_f_expr)
+    U_test_mf_B = do_u_test_w_fdr(B_m_expr,B_f_expr)
+    U_test_mf_N = do_u_test_w_fdr(N_m_expr,N_f_expr)
+    
+    if write_to_file:
+        U_test_BN_m.to_json(output_folder +cell_class + '_U_test_BN_m_c' + str(index)+'.json')
+        U_test_BN_f.to_json(output_folder +cell_class + '_U_test_BN_f_c' + str(index)+'.json')
+        U_test_mf_B.to_json(output_folder +cell_class + '_U_test_mf_B_c' + str(index)+'.json')
+        U_test_mf_N.to_json(output_folder +cell_class + '_U_test_mf_N_c' + str(index)+'.json')
+    
+    return U_test_BN_m, U_test_BN_f, U_test_mf_B, U_test_mf_N
+
+def volcano_plot(U_test_df,delta_df, cell_class, index, cl_mg_dict, test_name, output_folder, savefig = False):    
+    #build volcano dataframe for volcano plot
+    v_df = pd.DataFrame(index = U_test_df.index, columns = ['delta', '-log10(p_adj)'])
+    v_df['delta'] = delta_df
+    v_df['-log10(p_adj)'] = -np.log10(U_test_df['p_adj'].astype('float64'))
+    
+    # Define significance threshold
+    alpha = 0.05
+
+    # Plot volcano plot
+    fig,ax = plt.subplots()
+    ax.scatter(v_df['delta'], v_df['-log10(p_adj)'], color='blue', alpha=0.5)
+    ax.set_title(cell_class +  ' ' + test_name + ' Cluster: ' + str(index) + '-' + ' '.join(cl_mg_dict[str(index)]))
+    ax.axhline(-np.log10(alpha), color='red', linestyle='--', linewidth=1)
+    ax.axvline(x=1, color='red', linestyle='--', linewidth=1)
+    ax.axvline(x=-1, color='red', linestyle='--', linewidth=1)
+    ax.set_xlabel('ΔLog2 Fold Change')
+    ax.set_ylabel('-log10(p_adj)')
+    #add gene label if beyond alpha and log_fc<-1 or >1
+    for i, txt in enumerate(list(v_df.index)):
+        if v_df.loc[txt, '-log10(p_adj)'] > -np.log10(alpha):
+            if v_df.loc[txt, 'delta'] > 1 or v_df.loc[txt, 'delta'] < -1:
+                #standard labeling
+                ax.annotate(txt, (v_df.loc[txt,'delta'], v_df.loc[txt,'-log10(p_adj)']),fontsize = 5)
+
+    plt.grid(True)
+    plt.show()
+
+    if savefig:
+        plt.savefig(output_folder + 'plots/' + cell_class + '_volcano_plot_' + test_name +'_c' + str(index))
+    
+    return v_df
+
+def run_volcano_analysis(delta_data_folder, utest_data_folder,output_folder, index , cell_class, mg_cl_dict, savefig = 'False', write_to_file = False):
+    '''wraps volcano_plot() to do volcano analysis for index specified cluster /cell class. if write to file is true, writes data for plots to file'''
+    with open (utest_data_folder + cell_class + '_U_test_BN_m_c'+str(index)+ '.json') as json_data:
+        U_test_BN_m = json.load(json_data)
+    U_test_BN_m = pd.DataFrame.from_dict(U_test_BN_m, orient='columns')
+    with open (utest_data_folder + cell_class + '_U_test_BN_f_c'+str(index)+'.json') as json_data:
+        U_test_BN_f = json.load(json_data)
+    U_test_BN_f = pd.DataFrame.from_dict(U_test_BN_f, orient='columns')
+    with open (utest_data_folder + cell_class + '_U_test_mf_N_c'+str(index)+'.json') as json_data:
+        U_test_mf_N = json.load(json_data)
+    U_test_mf_N = pd.DataFrame.from_dict(U_test_mf_N, orient='columns')
+    with open (utest_data_folder + cell_class + '_U_test_mf_B_c'+str(index)+'.json') as json_data:
+        U_test_mf_B = json.load(json_data)
+    U_test_mf_B = pd.DataFrame.from_dict(U_test_mf_B, orient='columns')
+    
+    with open (delta_data_folder + cell_class + '_expr_mlog_df_c'+str(index)+'.json') as json_data:
+        expr_mlog_df = json.load(json_data)
+    expr_mlog_df = pd.DataFrame.from_dict(expr_mlog_df, orient='columns')
+    
+    delta_B_N_m = expr_mlog_df['B_m'] - expr_mlog_df['N_m']
+    delta_B_N_f = expr_mlog_df['B_f'] - expr_mlog_df['N_f']
+    delta_m_f_N = expr_mlog_df['N_m'] - expr_mlog_df['N_f']
+    delta_m_f_B = expr_mlog_df['B_m'] - expr_mlog_df['B_f']
+    
+    v_BN_m_df = volcano_plot(U_test_BN_m,delta_B_N_m,'GABA', index, mg_cl_dict,'ΔBN_m',output_folder, savefig)
+    v_BN_f_df = volcano_plot(U_test_BN_f,delta_B_N_f,'GABA', index, mg_cl_dict,'ΔBN_f',output_folder, savefig)
+    v_mf_B_df = volcano_plot(U_test_mf_B,delta_m_f_B,'GABA', index, mg_cl_dict,'Δmf_B',output_folder, savefig)
+    v_mf_N_df = volcano_plot(U_test_mf_N,delta_m_f_N,'GABA', index, mg_cl_dict,'Δmf_N',output_folder, savefig)
+    
+    if write_to_file:
+        v_BN_m_df.to_json(output_folder + 'data/' + cell_class + '_v_BN_m_df_c' + str(index)+'.json')
+        v_BN_f_df.to_json(output_folder + 'data/' + cell_class + '_v_BN_f_df_c' + str(index)+'.json')
+        v_mf_B_df.to_json(output_folder + 'data/' + cell_class + '_v_mf_B_df_c' + str(index)+'.json')
+        v_mf_N_df.to_json(output_folder + 'data/' + cell_class + '_v_mf_N_df_c' + str(index)+'.json')
+    
+    return v_BN_m_df, v_BN_f_df, v_mf_B_df, v_mf_N_df

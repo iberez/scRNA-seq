@@ -906,6 +906,7 @@ def update_metadata_w_markers(folder, meta_data_df_plis_filtered, mg_cl_dict_fin
     m_list = []
     for v in np.array(meta_data_df_plis_filtered.loc['cluster_label']):
         m = mg_cl_dict_final_sorted_filtered[v]
+        #comment out .join() when running nn
         mc = '-'.join(m)
         m_list.append(mc)
     m_list = np.reshape(np.array(m_list),(1,len(m_list)))

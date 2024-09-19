@@ -163,6 +163,12 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     B_f_expr_cnts = B_f_expr.shape[1]
     N_m_expr_cnts = N_m_expr.shape[1]
     B_m_expr_cnts = B_m_expr.shape[1]
+    counts_df = pd.DataFrame(index = [cluster_label], columns=['N_f_cnts', 'B_f_cnts','N_m_cnts','B_m_cnts'])
+    counts_df.loc[cluster_label,'N_f_cnts'] = N_f_expr_cnts
+    counts_df.loc[cluster_label,'B_f_cnts'] = B_f_expr_cnts
+    counts_df.loc[cluster_label,'N_m_cnts'] = N_m_expr_cnts
+    counts_df.loc[cluster_label,'B_m_cnts'] = B_m_expr_cnts
+
     #take mean of log2+1 for each gene
     N_f_expr_mlog = np.mean(np.log2(N_f_expr+1),axis = 1)
     B_f_expr_mlog = np.mean(np.log2(B_f_expr+1),axis = 1)
@@ -176,9 +182,18 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     delta_B_N_f = expr_mlog_df['B_f'] - expr_mlog_df['N_f']
     d_bn = np.sqrt(delta_B_N_m**2 + delta_B_N_f**2)
     
+    prc_top = 0.5 #get prc_top % of farthest out genes from origin
+    far_out_index = round(n_genes*(prc_top/100))
+    #get farthest out genes
+    d_bn_tmp = pd.DataFrame(index=delta_B_N_m.index, data=d_bn, columns=['d_bn'])
+    d_bn_sorted = d_bn_tmp.sort_values(by=['d_bn'], ascending=False)
+
+    print (far_out_index)
+    far_out_genes = d_bn_sorted.index[:far_out_index]
+    print (far_out_genes)
     fig,ax = plt.subplots()
     ax.set_title(cell_class + ' Δ Breeder-Naive, Cluster: ' + str(cluster_label) + '-' + ' '.join(cl_mg_dict[str(cluster_label)]))
-    ax.scatter(delta_B_N_m,delta_B_N_f, s=1)
+    #ax.scatter(delta_B_N_m,delta_B_N_f, s=1)
     ax.set_xlabel(f'Δ_B_m({B_m_expr_cnts})_N_m({N_m_expr_cnts})')
     ax.set_ylabel(f'Δ_B_f({B_f_expr_cnts})_N_f({N_f_expr_cnts})')
     plt.axvline(color = 'grey')
@@ -191,7 +206,7 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     #print (opt_lim)
     ax.set_xlim([-opt_lim,opt_lim])
     ax.set_ylim([-opt_lim,opt_lim])
-    fs = 5
+    fs = 10
     
     ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.1*opt_lim), 'thresh = '+str(threshold_prc) + '%', fontsize = fs)
     ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.15*opt_lim), 'r_bn = '+str(r_bn), fontsize = fs)
@@ -199,10 +214,13 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.25*opt_lim), 'n_cells = '+str(n_cells), fontsize = fs)
 
     TEXTS = []
+    #plot and label points outside of circle radius
     for i, txt in enumerate(list(delta_B_N_m.index)):
-        if d_bn.iloc[i] > r_bn:
-            #standard labeling
-            ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs)
+        if d_bn.iloc[i] > r_bn: 
+            ax.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c='blue')
+            #conditional labeling if gene is far out
+            if txt in list(far_out_genes):
+                ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs)
             #if txt.startswith('S'):
             #labeling using adjust text to repelling algo
             #TEXTS.append(ax.text(delta_B_N_m.iloc[i], delta_B_N_f.iloc[i],txt, fontsize = 7))
@@ -227,10 +245,16 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     delta_m_f_N = expr_mlog_df['N_m'] - expr_mlog_df['N_f']
     delta_m_f_B = expr_mlog_df['B_m'] - expr_mlog_df['B_f']
     d_mf = np.sqrt(delta_m_f_N**2 + delta_m_f_B**2)
+
+    #get farthest out genes
+    d_mf_tmp = pd.DataFrame(index=delta_m_f_N.index, data=d_mf, columns=['d_mf'])
+    d_mf_sorted = d_mf_tmp.sort_values(by=['d_mf'], ascending=False)
+    far_out_genes = d_mf_sorted.index[:far_out_index]
+
     #plot first 10
     fig,ax = plt.subplots()
     ax.set_title(cell_class + ' Δ Male-Female, Cluster: '+ str(cluster_label)  + '-' + ' '.join(cl_mg_dict[str(cluster_label)]))
-    ax.scatter(delta_m_f_N,delta_m_f_B, s=1)
+    #ax.scatter(delta_m_f_N,delta_m_f_B, s=1)
     plt.axvline(color = 'grey')
     plt.axhline(y=0, color = 'grey')
     plt.axline((0, 0), slope=1, color="grey", linestyle='--')
@@ -252,8 +276,10 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     
     for i, txt in enumerate(list(delta_B_N_m.index)):
         if d_mf.iloc[i] > r_mf:
-            #standard labeling
-            ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs)
+            ax.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=1, c = 'blue')
+            #conditional labeling if gene is far out
+            if txt in list(far_out_genes):
+                ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs)
             #labeling using adjust text to repelling algo
             #TEXTS.append(ax.text(delta_B_N_m.iloc[i], delta_B_N_f.iloc[i],txt, fontsize = 7))
                 #TEXTS.append(ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = 7))   
@@ -284,7 +310,7 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
         expr_raw_df.to_json(folder + 'data/' +file2+'.json')
         file3 = cell_class + '_metadata_df_c' + str(cluster_label)
         c_metadata_df.to_json(folder + 'data/' +file3+'.json')
-    return expr_mlog_df
+    return expr_mlog_df, counts_df
 
 def get_plot_labels(mg_cl_dict):
     '''formats key/values into single labels used for plots in sex stats nb'''
@@ -349,7 +375,7 @@ def run_stat_test(delta_data_folder, index ,output_folder, cell_class, write_to_
     
     return U_test_BN_m, U_test_BN_f, U_test_mf_B, U_test_mf_N
 
-def volcano_plot(U_test_df,delta_df, cell_class, index, cl_mg_dict, test_name, output_folder, savefig = False):    
+def volcano_plot(U_test_df,delta_df, cell_class, index, cl_mg_dict, all_counts_df, test_name, output_folder, savefig = False):    
     #build volcano dataframe for volcano plot
     v_df = pd.DataFrame(index = U_test_df.index, columns = ['delta', '-log10(p_adj)'])
     v_df['delta'] = delta_df
@@ -361,18 +387,22 @@ def volcano_plot(U_test_df,delta_df, cell_class, index, cl_mg_dict, test_name, o
     # Plot volcano plot
     fig,ax = plt.subplots()
     ax.scatter(v_df['delta'], v_df['-log10(p_adj)'], color='blue', alpha=0.5)
-    ax.set_title(cell_class +  ' ' + test_name + ' Cluster: ' + str(index) + '-' + ' '.join(cl_mg_dict[str(index)]))
+    ax.set_title(cell_class +  ' ' + test_name + ' ' + '(' + str(all_counts_df.iloc[0]) + ',' + str(all_counts_df.iloc[1]) + ')' + ' Cluster: ' + str(index) + '-' + ' '.join(cl_mg_dict[str(index)]))
     ax.axhline(-np.log10(alpha), color='red', linestyle='--', linewidth=1)
     ax.axvline(x=1, color='red', linestyle='--', linewidth=1)
     ax.axvline(x=-1, color='red', linestyle='--', linewidth=1)
     ax.set_xlabel('ΔLog2 Fold Change')
     ax.set_ylabel('-log10(p_adj)')
     #add gene label if beyond alpha and log_fc<-1 or >1
+    #also make note of index - append to text file
     for i, txt in enumerate(list(v_df.index)):
         if v_df.loc[txt, '-log10(p_adj)'] > -np.log10(alpha):
             if v_df.loc[txt, 'delta'] > 1 or v_df.loc[txt, 'delta'] < -1:
                 #standard labeling
-                ax.annotate(txt, (v_df.loc[txt,'delta'], v_df.loc[txt,'-log10(p_adj)']),fontsize = 5)
+                ax.annotate(txt, (v_df.loc[txt,'delta'], v_df.loc[txt,'-log10(p_adj)']),fontsize = 10)
+                #with open(output_folder + "sig_gene_index_list.txt", "a") as myfile:
+                    #myfile.write(str(test_name)+'_'+str(index) + '\n')
+                #write index, test namem and genes as row into csv
 
     plt.grid(True)
     plt.show()
@@ -382,7 +412,7 @@ def volcano_plot(U_test_df,delta_df, cell_class, index, cl_mg_dict, test_name, o
     
     return v_df
 
-def run_volcano_analysis(delta_data_folder, utest_data_folder,output_folder, index , cell_class, mg_cl_dict, savefig = 'False', write_to_file = False):
+def run_volcano_analysis(delta_data_folder, utest_data_folder,output_folder, index , cell_class, mg_cl_dict, all_counts_df, savefig = 'False', write_to_file = False):
     '''wraps volcano_plot() to do volcano analysis for index specified cluster /cell class. if write to file is true, writes data for plots to file'''
     with open (utest_data_folder + cell_class + '_U_test_BN_m_c'+str(index)+ '.json') as json_data:
         U_test_BN_m = json.load(json_data)
@@ -406,10 +436,10 @@ def run_volcano_analysis(delta_data_folder, utest_data_folder,output_folder, ind
     delta_m_f_N = expr_mlog_df['N_m'] - expr_mlog_df['N_f']
     delta_m_f_B = expr_mlog_df['B_m'] - expr_mlog_df['B_f']
     
-    v_BN_m_df = volcano_plot(U_test_BN_m,delta_B_N_m,'GABA', index, mg_cl_dict,'ΔBN_m',output_folder, savefig)
-    v_BN_f_df = volcano_plot(U_test_BN_f,delta_B_N_f,'GABA', index, mg_cl_dict,'ΔBN_f',output_folder, savefig)
-    v_mf_B_df = volcano_plot(U_test_mf_B,delta_m_f_B,'GABA', index, mg_cl_dict,'Δmf_B',output_folder, savefig)
-    v_mf_N_df = volcano_plot(U_test_mf_N,delta_m_f_N,'GABA', index, mg_cl_dict,'Δmf_N',output_folder, savefig)
+    v_BN_m_df = volcano_plot(U_test_BN_m,delta_B_N_m,'GABA', index, mg_cl_dict, all_counts_df.loc[index,['B_m_cnts','N_m_cnts']], 'ΔBN_m',output_folder, savefig)
+    v_BN_f_df = volcano_plot(U_test_BN_f,delta_B_N_f,'GABA', index, mg_cl_dict, all_counts_df.loc[index,['B_f_cnts','N_f_cnts']], 'ΔBN_f',output_folder, savefig)
+    v_mf_B_df = volcano_plot(U_test_mf_B,delta_m_f_B,'GABA', index, mg_cl_dict, all_counts_df.loc[index,['B_m_cnts','B_f_cnts']], 'Δmf_B',output_folder, savefig)
+    v_mf_N_df = volcano_plot(U_test_mf_N,delta_m_f_N,'GABA', index, mg_cl_dict, all_counts_df.loc[index,['N_f_cnts','N_m_cnts']], 'Δmf_N',output_folder, savefig)
     
     if write_to_file:
         v_BN_m_df.to_json(output_folder + 'data/' + cell_class + '_v_BN_m_df_c' + str(index)+'.json')

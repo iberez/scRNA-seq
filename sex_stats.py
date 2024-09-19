@@ -37,6 +37,7 @@ import panel as pn
 import bokeh
 from bokeh.resources import INLINE
 from scipy.stats import mannwhitneyu, false_discovery_control, wilcoxon
+import csv
 
 import dimorph_processing as dp
 
@@ -403,6 +404,15 @@ def volcano_plot(U_test_df,delta_df, cell_class, index, cl_mg_dict, all_counts_d
                 #with open(output_folder + "sig_gene_index_list.txt", "a") as myfile:
                     #myfile.write(str(test_name)+'_'+str(index) + '\n')
                 #write index, test namem and genes as row into csv
+                csv_row = [[str(index),test_name,txt]]
+                #print (csv_row)
+                # opening the csv file in 'a+' mode
+                file = open(output_folder + 'sig_genes.csv', 'a+', newline ='')
+                # writing the data into the file
+                with file:    
+                    write = csv.writer(file)
+                    write.writerows(csv_row)
+
 
     plt.grid(True)
     plt.show()

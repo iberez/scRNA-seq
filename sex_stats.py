@@ -109,7 +109,7 @@ def get_optimal_ax_lim(x_ser,y_ser):
     opt_lim = round(np.max(np.abs([min_x,max_x,min_y,max_y])))
     return opt_lim
 
-def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,threshold_prc, r_bn,r_mf, cl_mg_dict, cell_class,folder, savefig = False, write_to_file = False):
+def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,threshold_prc, r_bn,r_mf, cl_mg_dict, cell_class,folder, mode = 'delta', sig_genes_df = None, savefig = False, write_to_file = False):
     '''Inputs
     Parameters
     ----------
@@ -178,6 +178,16 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     expr_mlog_df = pd.concat([N_f_expr_mlog,B_f_expr_mlog,N_m_expr_mlog,B_m_expr_mlog], axis = 1)
     expr_mlog_df = expr_mlog_df.rename(columns={0: "N_f", 1: "B_f",2:"N_m", 3:"B_m" })
     
+    #if sig_genes mode, get sig genes for each plot from sig_genes_df
+    if mode == 'sig_genes':
+        tmp  = sig_genes_df.loc[sig_genes_df.loc[:,0]==cluster_label,:]
+        bn_sig_genes = tmp[tmp[1].isin(['ΔBN_m', 'ΔBN_f'])][2].tolist()
+        mf_sig_genes = tmp[tmp[1].isin(['Δmf_B', 'Δmf_N'])][2].tolist()
+        ΔBN_m_sig_genes = tmp[tmp[1].isin(['ΔBN_m'])][2].tolist()
+        ΔBN_f_sig_genes = tmp[tmp[1].isin(['ΔBN_f'])][2].tolist()
+        Δmf_B_sig_genes = tmp[tmp[1].isin(['Δmf_B'])][2].tolist()
+        Δmf_N_sig_genes = tmp[tmp[1].isin(['Δmf_N'])][2].tolist()
+
     #get delta Breeder - Naive, within each sex
     delta_B_N_m = expr_mlog_df['B_m'] - expr_mlog_df['N_m']
     delta_B_N_f = expr_mlog_df['B_f'] - expr_mlog_df['N_f']
@@ -188,10 +198,9 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     #get farthest out genes
     d_bn_tmp = pd.DataFrame(index=delta_B_N_m.index, data=d_bn, columns=['d_bn'])
     d_bn_sorted = d_bn_tmp.sort_values(by=['d_bn'], ascending=False)
-
-    print (far_out_index)
+    #print (far_out_index)
     far_out_genes = d_bn_sorted.index[:far_out_index]
-    print (far_out_genes)
+    #print (far_out_genes)
     fig,ax = plt.subplots()
     ax.set_title(cell_class + ' Δ Breeder-Naive, Cluster: ' + str(cluster_label) + '-' + ' '.join(cl_mg_dict[str(cluster_label)]))
     #ax.scatter(delta_B_N_m,delta_B_N_f, s=1)
@@ -205,23 +214,37 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     plt.gca().add_patch(circle)
     opt_lim = get_optimal_ax_lim(delta_B_N_m,delta_B_N_f)
     #print (opt_lim)
-    ax.set_xlim([-opt_lim,opt_lim])
-    ax.set_ylim([-opt_lim,opt_lim])
+    #if mode == 'delta':
+        #ax.set_xlim([-opt_lim,opt_lim])
+        #ax.set_ylim([-opt_lim,opt_lim])
     fs = 10
     
-    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.1*opt_lim), 'thresh = '+str(threshold_prc) + '%', fontsize = fs)
-    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.15*opt_lim), 'r_bn = '+str(r_bn), fontsize = fs)
-    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.2*opt_lim), 'n_genes = '+str(n_genes), fontsize = fs)
-    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.25*opt_lim), 'n_cells = '+str(n_cells), fontsize = fs)
+    ax.text(-.25, 0.15, 'thresh = '+str(threshold_prc) + '%', fontsize = fs)
+    ax.text(-.25, 0.05, 'r_bn = '+str(r_bn), fontsize = fs)
+    ax.text(-.25, -.05, 'n_genes = '+str(n_genes), fontsize = fs)
+    ax.text(-.25, -.15, 'n_cells = '+str(n_cells), fontsize = fs)
 
     TEXTS = []
     #plot and label points outside of circle radius
     for i, txt in enumerate(list(delta_B_N_m.index)):
         if d_bn.iloc[i] > r_bn: 
-            ax.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c='blue')
+            ax.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c='blue')       
+            #switch labeling depending if sig genes is passed
+            if mode == 'sig_genes':
+                #print ('sig gene detected')
+                #print (txt)
+                if txt in ΔBN_m_sig_genes:
+                    ax.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c='red', marker="^", label = 'ΔBN_m_sig_genes')
+                    ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs, c = 'red')
+                #for g in ΔBN_f_sig_genes:
+                    #if g == txt:
+                if txt in ΔBN_f_sig_genes: 
+                    ax.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c='green', marker="o", label = 'ΔBN_f_sig_genes')
+                    ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs, c = 'green')    
             #conditional labeling if gene is far out
-            if txt in list(far_out_genes):
-                ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs)
+            if mode == 'delta':
+                if txt in list(far_out_genes):
+                    ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs)
             #if txt.startswith('S'):
             #labeling using adjust text to repelling algo
             #TEXTS.append(ax.text(delta_B_N_m.iloc[i], delta_B_N_f.iloc[i],txt, fontsize = 7))
@@ -239,9 +262,17 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
         ),
         ax=fig.axes[0])
     '''
-        
-    if savefig:
-        plt.savefig(folder + 'plots/' + cell_class + '_Gene_Delta_Plot_Breeder-Naive_c' + str(cluster_label))
+    if mode == 'sig_genes':
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        plt.legend(by_label.values(), by_label.keys())
+    #ax.legend()
+    if mode == 'delta':
+        if savefig:
+            plt.savefig(folder + 'plots/' + cell_class + '_Gene_Delta_Plot_Breeder-Naive_c' + str(cluster_label))
+    if mode == 'sig_genes':
+        if savefig:
+            plt.savefig(folder + 'sig_plots/' + cell_class + '_Gene_Delta_Plot_Breeder-Naive_c' + str(cluster_label))
 
     delta_m_f_N = expr_mlog_df['N_m'] - expr_mlog_df['N_f']
     delta_m_f_B = expr_mlog_df['B_m'] - expr_mlog_df['B_f']
@@ -266,21 +297,34 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     plt.gca().add_patch(circle)
     opt_lim = get_optimal_ax_lim(delta_m_f_N,delta_m_f_B)
     #print (opt_lim)
-    ax.set_xlim([-opt_lim,opt_lim])
-    ax.set_ylim([-opt_lim,opt_lim])
+    #if mode == 'delta':
+        #ax.set_xlim([-opt_lim,opt_lim])
+        #ax.set_ylim([-opt_lim,opt_lim])
     
 
-    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.1*opt_lim), 'thresh = '+str(threshold_prc) + '%',fontsize = fs)
-    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.15*opt_lim), 'r_mf = '+str(r_mf), fontsize = fs)
-    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.2*opt_lim), 'n_genes = '+str(n_genes),fontsize = fs)
-    ax.text(opt_lim-(0.6*opt_lim), opt_lim-(0.25*opt_lim), 'n_cells = '+str(n_cells), fontsize = fs)
+    ax.text(-.25, .15, 'thresh = '+str(threshold_prc) + '%',fontsize = fs)
+    ax.text(-.25, 0.05, 'r_mf = '+str(r_mf), fontsize = fs)
+    ax.text(-.25, -0.05, 'n_genes = '+str(n_genes),fontsize = fs)
+    ax.text(-.25, -.15, 'n_cells = '+str(n_cells), fontsize = fs)
     
     for i, txt in enumerate(list(delta_B_N_m.index)):
         if d_mf.iloc[i] > r_mf:
             ax.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=1, c = 'blue')
+            #switch labeling depending if sig genes is passed
+            if mode == 'sig_genes':
+                #print ('sig gene detected')
+                #print (txt)
+                if txt in Δmf_B_sig_genes:
+                    ax.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=1, c='red', marker="^", label = "Δmf_B_sig_genes")
+                    ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs, c = 'red')
+                if txt in Δmf_N_sig_genes:
+                    ax.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=1, c='green', marker="o", label = "Δmf_N_sig_genes")
+                    ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs, c = 'green')
+
             #conditional labeling if gene is far out
-            if txt in list(far_out_genes):
-                ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs)
+            if mode == 'delta':
+                if txt in list(far_out_genes):
+                    ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs)
             #labeling using adjust text to repelling algo
             #TEXTS.append(ax.text(delta_B_N_m.iloc[i], delta_B_N_f.iloc[i],txt, fontsize = 7))
                 #TEXTS.append(ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = 7))   
@@ -297,20 +341,30 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
         ),
         ax=fig.axes[0])    
     '''
-    
-    if savefig:
-        plt.savefig(folder + 'plots/' + cell_class + '_Gene_Delta_Plot_Male-Female_c' + str(cluster_label))
+    if mode == 'sig_genes':
+        handles, labels = plt.gca().get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        plt.legend(by_label.values(), by_label.keys())
+
+    if mode == 'delta':
+        if savefig:
+            plt.savefig(folder + 'plots/' + cell_class + '_Gene_Delta_Plot_Male-Female_c' + str(cluster_label))
+    if mode == 'sig_genes':
+        if savefig:
+            plt.savefig(folder + 'sig_plots/' + cell_class + '_Gene_Delta_Plot_Male-Female_c' + str(cluster_label))
     
     
     plt.show()
-    if write_to_file:
-        #write updated metadata to file
-        file = cell_class + '_expr_mlog_df_c' + str(cluster_label)
-        expr_mlog_df.to_json(folder + 'data/' +file+'.json')
-        file2 = cell_class + '_expr_raw_df_c' + str(cluster_label)
-        expr_raw_df.to_json(folder + 'data/' +file2+'.json')
-        file3 = cell_class + '_metadata_df_c' + str(cluster_label)
-        c_metadata_df.to_json(folder + 'data/' +file3+'.json')
+    if mode == 'delta':
+        if write_to_file:
+            #write updated metadata to file
+            file = cell_class + '_expr_mlog_df_c' + str(cluster_label)
+            expr_mlog_df.to_json(folder + 'data/' +file+'.json')
+            file2 = cell_class + '_expr_raw_df_c' + str(cluster_label)
+            expr_raw_df.to_json(folder + 'data/' +file2+'.json')
+            file3 = cell_class + '_metadata_df_c' + str(cluster_label)
+            c_metadata_df.to_json(folder + 'data/' +file3+'.json')
+
     return expr_mlog_df, counts_df
 
 def get_plot_labels(mg_cl_dict):

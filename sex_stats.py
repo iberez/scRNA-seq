@@ -109,7 +109,7 @@ def get_optimal_ax_lim(x_ser,y_ser):
     opt_lim = round(np.max(np.abs([min_x,max_x,min_y,max_y])))
     return opt_lim
 
-def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,threshold_prc, r_bn,r_mf, cl_mg_dict, cell_class,folder, mode = 'delta', sig_genes_df = None, savefig = False, write_to_file = False):
+def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,threshold_prc, r_bn,r_mf, cl_mg_dict, cell_class,folder, normalize = False, n_factor = 20000, mode = 'delta', sig_genes_df = None, savefig = False, write_to_file = False):
     '''Inputs
     Parameters
     ----------
@@ -135,11 +135,18 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
         log and meaned expression for each group, genes as rows'''
     #marker gene expression within a cluster
     c_expr = df.loc[:,meta_data_df.loc['cluster_label']==cluster_label]
-    print (c_expr.shape)
+    #print (c_expr.iloc[:3,:3])
+    #print (c_expr.shape)
     c_expr_bool = c_expr.mask(c_expr>0, other = 1)
-
     gene_sum =  np.array(c_expr_bool.sum(axis=1))
+    #print (gene_sum)
+    #print (gene_sum.shape)
     gene_sum = np.reshape(gene_sum,(c_expr_bool.shape[0],1))
+    #print (gene_sum.shape)
+    if normalize:
+        c_expr = (c_expr/gene_sum)*n_factor
+    #print (c_expr.iloc[:3,:3])
+    #print (c_expr.shape)
     gene_threshold = (threshold_prc/100)*c_expr_bool.shape[1]
     genes_to_keep_ind = []
     for i,v in enumerate(gene_sum):
@@ -147,7 +154,7 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
             genes_to_keep_ind.append(i)
     #update c_expr keeping only genes above threshold
     c_expr = c_expr.iloc[genes_to_keep_ind,:]
-    print (c_expr.shape)
+    #print (c_expr.shape)
     n_genes = c_expr.shape[0]
     n_cells = c_expr.shape[1]
     c_metadata = meta_data_df.loc[:,meta_data_df.loc['cluster_label']==cluster_label]
@@ -193,14 +200,15 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     delta_B_N_f = expr_mlog_df['B_f'] - expr_mlog_df['N_f']
     d_bn = np.sqrt(delta_B_N_m**2 + delta_B_N_f**2)
     
-    prc_top = 0.5 #get prc_top % of farthest out genes from origin
+    prc_top = 0.1 #get prc_top % of farthest out genes from origin
     far_out_index = round(n_genes*(prc_top/100))
     #get farthest out genes
     d_bn_tmp = pd.DataFrame(index=delta_B_N_m.index, data=d_bn, columns=['d_bn'])
     d_bn_sorted = d_bn_tmp.sort_values(by=['d_bn'], ascending=False)
     #print (far_out_index)
     far_out_genes = d_bn_sorted.index[:far_out_index]
-    #print (far_out_genes)
+    print (far_out_genes)
+    print (len(far_out_genes))
     fig,ax = plt.subplots()
     ax.set_title(cell_class + ' Δ Breeder-Naive, Cluster: ' + str(cluster_label) + '-' + ' '.join(cl_mg_dict[str(cluster_label)]))
     #ax.scatter(delta_B_N_m,delta_B_N_f, s=1)
@@ -212,17 +220,18 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     # Draw a circle with the specified radius
     circle = plt.Circle((0, 0), r_bn, color='grey', fill=False, linestyle='--')
     plt.gca().add_patch(circle)
-    opt_lim = get_optimal_ax_lim(delta_B_N_m,delta_B_N_f)
-    #print (opt_lim)
+    #opt_lim = get_optimal_ax_lim(delta_B_N_m,delta_B_N_f)
+    opt_lim = 6
     #if mode == 'delta':
-        #ax.set_xlim([-opt_lim,opt_lim])
-        #ax.set_ylim([-opt_lim,opt_lim])
+    ax.set_xlim([-opt_lim,opt_lim])
+    ax.set_ylim([-opt_lim,opt_lim])
     fs = 10
     
-    ax.text(-.25, 0.15, 'thresh = '+str(threshold_prc) + '%', fontsize = fs)
-    ax.text(-.25, 0.05, 'r_bn = '+str(r_bn), fontsize = fs)
-    ax.text(-.25, -.05, 'n_genes = '+str(n_genes), fontsize = fs)
-    ax.text(-.25, -.15, 'n_cells = '+str(n_cells), fontsize = fs)
+    s_factor = opt_lim/2
+    ax.text(-.25*s_factor, 0.15*s_factor, 'thresh = '+str(threshold_prc) + '%', fontsize = fs)
+    ax.text(-.25*s_factor, 0.05*s_factor, 'r_bn = '+str(r_bn), fontsize = fs)
+    ax.text(-.25*s_factor, -.05*s_factor, 'n_genes = '+str(n_genes), fontsize = fs)
+    ax.text(-.25*s_factor, -.15*s_factor, 'n_cells = '+str(n_cells), fontsize = fs)
 
     TEXTS = []
     #plot and label points outside of circle radius
@@ -295,17 +304,20 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     # Draw a circle with the specified radius
     circle = plt.Circle((0, 0), r_mf, color='grey', fill=False, linestyle='--')
     plt.gca().add_patch(circle)
-    opt_lim = get_optimal_ax_lim(delta_m_f_N,delta_m_f_B)
+    
+    #opt_lim = get_optimal_ax_lim(delta_m_f_N,delta_m_f_B)
+    #get_optimal_ax_lim seems to be buggy, use fixed lim
+    opt_lim = 6
     #print (opt_lim)
     #if mode == 'delta':
-        #ax.set_xlim([-opt_lim,opt_lim])
-        #ax.set_ylim([-opt_lim,opt_lim])
+    ax.set_xlim([-opt_lim,opt_lim])
+    ax.set_ylim([-opt_lim,opt_lim])
     
 
-    ax.text(-.25, .15, 'thresh = '+str(threshold_prc) + '%',fontsize = fs)
-    ax.text(-.25, 0.05, 'r_mf = '+str(r_mf), fontsize = fs)
-    ax.text(-.25, -0.05, 'n_genes = '+str(n_genes),fontsize = fs)
-    ax.text(-.25, -.15, 'n_cells = '+str(n_cells), fontsize = fs)
+    ax.text(-.25*s_factor, .15*s_factor, 'thresh = '+str(threshold_prc) + '%',fontsize = fs)
+    ax.text(-.25*s_factor, 0.05*s_factor, 'r_mf = '+str(r_mf), fontsize = fs)
+    ax.text(-.25*s_factor, -0.05*s_factor, 'n_genes = '+str(n_genes),fontsize = fs)
+    ax.text(-.25*s_factor, -.15*s_factor, 'n_cells = '+str(n_cells), fontsize = fs)
     
     for i, txt in enumerate(list(delta_B_N_m.index)):
         if d_mf.iloc[i] > r_mf:
@@ -458,7 +470,7 @@ def volcano_plot(U_test_df,delta_df, cell_class, index, cl_mg_dict, all_counts_d
                 #with open(output_folder + "sig_gene_index_list.txt", "a") as myfile:
                     #myfile.write(str(test_name)+'_'+str(index) + '\n')
                 #write index, test namem and genes as row into csv
-                csv_row = [[str(index),test_name,txt]]
+                csv_row = [[str(index),test_name,txt,v_df.loc[txt,'delta'], v_df.loc[txt,'-log10(p_adj)']]]
                 #print (csv_row)
                 # opening the csv file in 'a+' mode
                 file = open(output_folder + 'sig_genes.csv', 'a+', newline ='')

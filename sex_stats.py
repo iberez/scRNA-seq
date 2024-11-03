@@ -133,38 +133,66 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     -------
     expr_mlog_df: dataframe 
         log and meaned expression for each group, genes as rows'''
+    #toggle gene index threshold to determine if thresholding is done on clusters or entire class
+    thresh_in_cluster = False
     #marker gene expression within a cluster
     c_expr = df.loc[:,meta_data_df.loc['cluster_label']==cluster_label]
     #print (c_expr.iloc[:3,:3])
     #print (c_expr.shape)
-    c_expr_bool = c_expr.mask(c_expr>0, other = 1)
-    gene_sum =  np.array(c_expr_bool.sum(axis=1))
-    #print (gene_sum)
-    #print (gene_sum.shape)
-    gene_sum = np.reshape(gene_sum,(c_expr_bool.shape[0],1))
-    #print (gene_sum.shape)
-    if normalize:
-        c_expr = (c_expr/gene_sum)*n_factor
-    #print (c_expr.iloc[:3,:3])
-    #print (c_expr.shape)
-    gene_threshold = (threshold_prc/100)*c_expr_bool.shape[1]
-    genes_to_keep_ind = []
-    for i,v in enumerate(gene_sum):
-        if v > gene_threshold:
-            genes_to_keep_ind.append(i)
-    #update c_expr keeping only genes above threshold
-    c_expr = c_expr.iloc[genes_to_keep_ind,:]
-    #print (c_expr.shape)
+    if thresh_in_cluster:
+
+        c_expr_bool = c_expr.mask(c_expr>0, other = 1)
+        gene_sum =  np.array(c_expr_bool.sum(axis=1))
+        #print (gene_sum)
+        #print (gene_sum.shape)
+        gene_sum = np.reshape(gene_sum,(c_expr_bool.shape[0],1))
+        #print (gene_sum.shape)
+        if normalize:
+            c_expr = (c_expr/gene_sum)*n_factor
+        #print (c_expr.iloc[:3,:3])
+        #print (c_expr.shape)
+        gene_threshold = (threshold_prc/100)*c_expr_bool.shape[1]
+        genes_to_keep_ind = []
+        for i,v in enumerate(gene_sum):
+            if v > gene_threshold:
+                genes_to_keep_ind.append(i)
+        #update c_expr keeping only genes above threshold
+        c_expr = c_expr.iloc[genes_to_keep_ind,:]
+
+        #print (c_expr.shape)
+
+    
+    else:
+        expr = df
+        expr_bool = expr.mask(expr>0, other = 1)
+        gene_sum =  np.array(expr_bool.sum(axis=1))
+        gene_sum = np.reshape(gene_sum,(expr_bool.shape[0],1))
+        #print (gene_sum.shape)
+        if normalize:
+            expr = (expr/gene_sum)*n_factor
+        gene_threshold = (threshold_prc/100)*expr_bool.shape[1]
+        genes_to_keep_ind = []
+        for i,v in enumerate(gene_sum):
+            if v > gene_threshold:
+                genes_to_keep_ind.append(i)
+        #update c_expr keeping only genes above threshold
+        c_expr = c_expr.iloc[genes_to_keep_ind,:]
+
+        print (c_expr.shape)
+
+
     n_genes = c_expr.shape[0]
     n_cells = c_expr.shape[1]
     c_metadata = meta_data_df.loc[:,meta_data_df.loc['cluster_label']==cluster_label]
+
     #isolated expression of 4 groups within cluster
     N_f_expr = c_expr.loc[:,c_metadata.loc['Group',:]=='Naïve-F']
     B_f_expr = c_expr.loc[:,c_metadata.loc['Group',:]=='Breeder-F']
     N_m_expr = c_expr.loc[:,c_metadata.loc['Group',:]=='Naïve-M']
     B_m_expr = c_expr.loc[:,c_metadata.loc['Group',:]=='Breeder-M']
     expr_raw_df = pd.concat([N_f_expr,B_f_expr,N_m_expr,B_m_expr], axis = 1)
-    expr_raw_df = expr_raw_df.rename(columns={0: "N_f", 1: "B_f",2:"N_m", 3:"B_m" })
+    #expr_raw_df = expr_raw_df.rename(columns={0: "N_f", 1: "B_f",2:"N_m", 3:"B_m" })
+    
     c_metadata_df = c_metadata.reindex(columns = expr_raw_df.columns)
     #get counts of each category
     N_f_expr_cnts = N_f_expr.shape[1]
@@ -421,13 +449,19 @@ def run_stat_test(delta_data_folder, index ,output_folder, cell_class, write_to_
         metadata_df = json.load(json_data)
     
     expr_raw_df = pd.DataFrame.from_dict(expr_raw_df, orient='columns')
+
     metadata_df = pd.DataFrame.from_dict(metadata_df, orient='columns')
+    
+    #print (expr_raw_df.columns == metadata_df.columns)
     
     N_f_expr = expr_raw_df.loc[:,metadata_df.loc['Group',:]=='Naïve-F']
     B_f_expr = expr_raw_df.loc[:,metadata_df.loc['Group',:]=='Breeder-F']
     N_m_expr = expr_raw_df.loc[:,metadata_df.loc['Group',:]=='Naïve-M']
     B_m_expr = expr_raw_df.loc[:,metadata_df.loc['Group',:]=='Breeder-M']
     
+    #print (B_m_expr.loc['Cops7a',:].shape)
+    #print (B_f_expr.loc['Cops7a',:].shape)
+
     #do mann whiteney u test for each axis
     U_test_BN_m = do_u_test_w_fdr(B_m_expr,N_m_expr)
     U_test_BN_f = do_u_test_w_fdr(B_f_expr,N_f_expr)
@@ -447,7 +481,7 @@ def volcano_plot(U_test_df,delta_df, cell_class, index, cl_mg_dict, all_counts_d
     v_df = pd.DataFrame(index = U_test_df.index, columns = ['delta', '-log10(p_adj)'])
     v_df['delta'] = delta_df
     v_df['-log10(p_adj)'] = -np.log10(U_test_df['p_adj'].astype('float64'))
-    
+    #print (v_df['-log10(p_adj)'])
     # Define significance threshold
     alpha = 0.05
 
@@ -463,6 +497,14 @@ def volcano_plot(U_test_df,delta_df, cell_class, index, cl_mg_dict, all_counts_d
     #add gene label if beyond alpha and log_fc<-1 or >1
     #also make note of index - append to text file
     for i, txt in enumerate(list(v_df.index)):
+        #write out stat values for all genes
+        csv_row = [[str(index),test_name,txt,v_df.loc[txt,'delta'], v_df.loc[txt,'-log10(p_adj)']]]
+        file = open(output_folder + 'all_genes_fix_t.csv', 'a+', newline ='')
+        with file:    
+            write = csv.writer(file)
+            write.writerows(csv_row)
+
+
         if v_df.loc[txt, '-log10(p_adj)'] > -np.log10(alpha):
             if v_df.loc[txt, 'delta'] > 1 or v_df.loc[txt, 'delta'] < -1:
                 #standard labeling
@@ -473,7 +515,8 @@ def volcano_plot(U_test_df,delta_df, cell_class, index, cl_mg_dict, all_counts_d
                 csv_row = [[str(index),test_name,txt,v_df.loc[txt,'delta'], v_df.loc[txt,'-log10(p_adj)']]]
                 #print (csv_row)
                 # opening the csv file in 'a+' mode
-                file = open(output_folder + 'sig_genes.csv', 'a+', newline ='')
+                file = open(output_folder + 'sig_genes_fix_t.csv', 'a+', newline ='')
+                
                 # writing the data into the file
                 with file:    
                     write = csv.writer(file)

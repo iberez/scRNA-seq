@@ -109,7 +109,7 @@ def get_optimal_ax_lim(x_ser,y_ser):
     opt_lim = round(np.max(np.abs([min_x,max_x,min_y,max_y])))
     return opt_lim
 
-def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,threshold_prc, r_bn,r_mf, cl_mg_dict, cell_class,folder, normalize = False, n_factor = 20000, mode = 'delta', sig_genes_df = None, savefig = False, write_to_file = False):
+def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,threshold_prc_h,threshold_prc_l, r_bn,r_mf, cl_mg_dict, cell_class,folder, normalize = False, n_factor = 20000, mode = 'delta', sig_genes_df = None, savefig = False, write_to_file = False):
     '''Inputs
     Parameters
     ----------
@@ -150,11 +150,13 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
         if normalize:
             c_expr = (c_expr/gene_sum)*n_factor
         #print (c_expr.iloc[:3,:3])
-        #print (c_expr.shape)
-        gene_threshold = (threshold_prc/100)*c_expr_bool.shape[1]
+        #set lower threshold for genes expressed in < threshold_prc_l% of cells
+        gene_threshold_l = (threshold_prc_l/100)*expr_bool.shape[1]
+        #set upper threshold for removing housekeeping genes:
+        gene_threshold_h = (threshold_prc_h/100)*expr_bool.shape[1]
         genes_to_keep_ind = []
         for i,v in enumerate(gene_sum):
-            if v > gene_threshold:
+            if gene_threshold_h > v > gene_threshold_l:
                 genes_to_keep_ind.append(i)
         #update c_expr keeping only genes above threshold
         c_expr = c_expr.iloc[genes_to_keep_ind,:]
@@ -170,10 +172,13 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
         #print (gene_sum.shape)
         if normalize:
             expr = (expr/gene_sum)*n_factor
-        gene_threshold = (threshold_prc/100)*expr_bool.shape[1]
+        #set lower threshold for genes expressed in < threshold_prc_l% of cells
+        gene_threshold_l = (threshold_prc_l/100)*expr_bool.shape[1]
+        #set upper threshold for removing housekeeping genes:
+        gene_threshold_h = (threshold_prc_h/100)*expr_bool.shape[1]
         genes_to_keep_ind = []
         for i,v in enumerate(gene_sum):
-            if v > gene_threshold:
+            if gene_threshold_h > v > gene_threshold_l:
                 genes_to_keep_ind.append(i)
         #update c_expr keeping only genes above threshold
         c_expr = c_expr.iloc[genes_to_keep_ind,:]
@@ -256,7 +261,7 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     fs = 10
     
     s_factor = opt_lim/2
-    ax.text(-.25*s_factor, 0.15*s_factor, 'thresh = '+str(threshold_prc) + '%', fontsize = fs)
+    ax.text(-.25*s_factor, 0.15*s_factor, 'thresh_l_h = '+str(threshold_prc_l) + '|' + str(threshold_prc_h) + '%', fontsize = fs)
     ax.text(-.25*s_factor, 0.05*s_factor, 'r_bn = '+str(r_bn), fontsize = fs)
     ax.text(-.25*s_factor, -.05*s_factor, 'n_genes = '+str(n_genes), fontsize = fs)
     ax.text(-.25*s_factor, -.15*s_factor, 'n_cells = '+str(n_cells), fontsize = fs)
@@ -342,7 +347,7 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_label,thr
     ax.set_ylim([-opt_lim,opt_lim])
     
 
-    ax.text(-.25*s_factor, .15*s_factor, 'thresh = '+str(threshold_prc) + '%',fontsize = fs)
+    ax.text(-.25*s_factor, .15*s_factor, 'thresh_l_h = '+str(threshold_prc_l) + '|' + str(threshold_prc_h),fontsize = fs)
     ax.text(-.25*s_factor, 0.05*s_factor, 'r_mf = '+str(r_mf), fontsize = fs)
     ax.text(-.25*s_factor, -0.05*s_factor, 'n_genes = '+str(n_genes),fontsize = fs)
     ax.text(-.25*s_factor, -.15*s_factor, 'n_cells = '+str(n_cells), fontsize = fs)
@@ -478,9 +483,10 @@ def run_stat_test(delta_data_folder, index ,output_folder, cell_class, write_to_
 
 def volcano_plot(U_test_df,delta_df, cell_class, index, cl_mg_dict, all_counts_df, test_name, output_folder, savefig = False):    
     #build volcano dataframe for volcano plot
-    v_df = pd.DataFrame(index = U_test_df.index, columns = ['delta', '-log10(p_adj)'])
+    v_df = pd.DataFrame(index = U_test_df.index, columns = ['delta', '-log10(p_adj)','p_adj'])
     v_df['delta'] = delta_df
     v_df['-log10(p_adj)'] = -np.log10(U_test_df['p_adj'].astype('float64'))
+    v_df['p_adj'] = U_test_df['p_adj']
     #print (v_df['-log10(p_adj)'])
     # Define significance threshold
     alpha = 0.05
@@ -498,8 +504,8 @@ def volcano_plot(U_test_df,delta_df, cell_class, index, cl_mg_dict, all_counts_d
     #also make note of index - append to text file
     for i, txt in enumerate(list(v_df.index)):
         #write out stat values for all genes
-        csv_row = [[str(index),test_name,txt,v_df.loc[txt,'delta'], v_df.loc[txt,'-log10(p_adj)']]]
-        file = open(output_folder + 'all_genes_fix_t.csv', 'a+', newline ='')
+        csv_row = [[str(index),test_name,txt,v_df.loc[txt,'delta'], v_df.loc[txt,'p_adj']]]
+        file = open(output_folder + 'all_genes_081124.csv', 'a+', newline ='')
         with file:    
             write = csv.writer(file)
             write.writerows(csv_row)
@@ -512,15 +518,15 @@ def volcano_plot(U_test_df,delta_df, cell_class, index, cl_mg_dict, all_counts_d
                 #with open(output_folder + "sig_gene_index_list.txt", "a") as myfile:
                     #myfile.write(str(test_name)+'_'+str(index) + '\n')
                 #write index, test namem and genes as row into csv
-                csv_row = [[str(index),test_name,txt,v_df.loc[txt,'delta'], v_df.loc[txt,'-log10(p_adj)']]]
+                #csv_row = [[str(index),test_name,txt,v_df.loc[txt,'delta'], v_df.loc[txt,'-log10(p_adj)']]]
                 #print (csv_row)
                 # opening the csv file in 'a+' mode
-                file = open(output_folder + 'sig_genes_fix_t.csv', 'a+', newline ='')
+                #file = open(output_folder + 'sig_genes_fix_t.csv', 'a+', newline ='')
                 
                 # writing the data into the file
-                with file:    
-                    write = csv.writer(file)
-                    write.writerows(csv_row)
+                #with file:    
+                    #write = csv.writer(file)
+                    #write.writerows(csv_row)
 
 
     plt.grid(True)

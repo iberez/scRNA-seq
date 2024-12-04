@@ -10,7 +10,7 @@ import os
 import glob
 import pandas as pd
 import numpy as np
-from pandas_ods_reader import read_ods
+#from pandas_ods_reader import read_ods
 from copy import deepcopy
 import pprint
 import json
@@ -33,10 +33,10 @@ from sklearn.neighbors import NearestNeighbors
 from collections import Counter
 from sklearn.preprocessing import StandardScaler
 from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, leaves_list
-import harmonypy as hm
+#import harmonypy as hm
 from matplotlib.cm import ScalarMappable
 from datetime import date
-import mpld3
+#import mpld3
 
 today = str(date.today())
 
@@ -598,18 +598,21 @@ def inter_cluster_sort(df, meta_data_df, unique_labels, n_components, linkage_al
     3) Compute distance matrix on PCA reduced array using 'correlation' as distance metric
     4) Compute linkage on distance matrix using 'ward' linkage alg to determine cluster order
     '''
-    #transpose since we PCA reduce on genes 
-    df = df.T
+    #transpose since we PCA reduce on genes (df _ls is inputted as cellsxgenes)
+    #remove transpose for _raw (already genesxcells)
+    #df = df.T
     #compute mean for each gene, for each cluster
     mean_per_gene_per_cluster_arr = np.zeros((len(df.index),len(unique_labels)))
     for i in range(len(unique_labels)):
-        cluster_mean_expr = np.mean(df.loc[:,meta_data_df.loc['cluster_label',:] == i], axis = 1)
+        #cluster_mean_expr = np.mean(df.loc[:,meta_data_df.loc['cluster_label',:] == i], axis = 1)
+        #using raw expr (not _ls), take mean of log2x + 1 to match amit processing   
+        cluster_mean_expr = np.mean(np.log2(df.loc[:,meta_data_df.loc['cluster_label',:] == i]+1), axis = 1)
         mean_per_gene_per_cluster_arr[:,i] = cluster_mean_expr
     #do pca
     pca = PCA(n_components).fit(mean_per_gene_per_cluster_arr.T)
     mpg_pc_pca = pca.transform(mean_per_gene_per_cluster_arr.T)
     #Compute condensed distance matrix
-    D_cond = pdist(mpg_pc_pca, metric='correlation')
+    D_cond = pdist(mpg_pc_pca, metric=dist_metric)
     #do linkage
     #31.03.24 - can enable optimal ordering with linkage(, , optimal_ordering = True)
     #31.03.24, try doing linkage on mpg_pc_pca (prj in Amits code), then get optimal order after 
@@ -630,6 +633,8 @@ def inter_cluster_sort(df, meta_data_df, unique_labels, n_components, linkage_al
     plt.show()
     #build new df using linkage order
     df_post_linkage = pd.DataFrame(index = df.index, columns = [])
+    #try using _po to resolve problematic ordering
+    #for i,v in enumerate(linkage_cluster_order_po):
     for i,v in enumerate(linkage_cluster_order):
         #print(meta_data_df.loc['cluster_label',meta_data_df.loc['cluster_label',:] == v])
         #print (df.iloc[:,np.where(meta_data_df.loc['cluster_label',:] == v)[0]])
@@ -672,7 +677,7 @@ def intra_cluster_sort(df, meta_data_df, linkage_cluster_order):
     
     return df_post_linkage_intra_sorted, meta_data_df, cluster_indices
 
-def compute_marker_genes(df, meta_data_df, cluster_indices, linkage_cluster_order, n_markers):
+def compute_marker_genes(df, meta_data_df, cluster_indices, linkage_cluster_order, n_markers, class_score_name = None):
     #store avg index for each cluster (used for plutting cluster label ticks), and set pointer to 0
     tmp = 0
     pos = [] 
@@ -702,22 +707,34 @@ def compute_marker_genes(df, meta_data_df, cluster_indices, linkage_cluster_orde
         
     #set any cluster mean pos <0.2 to 0
     cluster_mean_pos[cluster_mean_pos<0.2] = 0
-    
+    #2.12.24 added list() in each np.column stack calls
     #compute gene index arrays for three different weights, slice off n_markers number of rows from top
     xi0 = np.multiply(cluster_expr_ratios, (cluster_mean_pos**0.001))
     xi0_df = pd.DataFrame(data = xi0, index = df.index)
-    xi0_ind_arr = np.column_stack((xi0_df.iloc[:,i].sort_values(ascending=False).index for i in range(len(xi0_df.columns))))
+    #print (xi0_df.shape)
+    #print (type(list(xi0_df.iloc[:,i].sort_values(ascending=False).index for i in range(len(xi0_df.columns)))))
+    xi0_ind_arr = np.column_stack((list(xi0_df.iloc[:,i].sort_values(ascending=False).index for i in range(len(xi0_df.columns)))))
     xi0_ind_arr = xi0_ind_arr[:n_markers,:]
 
     xi0p5 = np.multiply(cluster_expr_ratios, (cluster_mean_pos**0.5))
     xi0p5_df = pd.DataFrame(data = xi0p5, index = df.index)
-    xi0p5_ind_arr = np.column_stack((xi0p5_df.iloc[:,i].sort_values(ascending=False).index for i in range(len(xi0p5_df.columns))))
+    xi0p5_ind_arr = np.column_stack((list(xi0p5_df.iloc[:,i].sort_values(ascending=False).index for i in range(len(xi0p5_df.columns)))))
     xi0p5_ind_arr = xi0p5_ind_arr[:n_markers,:]
 
     xi1 = np.multiply(cluster_expr_ratios, (cluster_mean_pos**1))
     xi1_df = pd.DataFrame(data = xi1, index = df.index)
-    xi1_ind_arr = np.column_stack((xi1_df.iloc[:,i].sort_values(ascending=False).index for i in range(len(xi1_df.columns))))
+    if class_score_name:
+        xi1_df.to_csv('/bigdata/isaac/'+str(class_score_name)+'_raw.csv')
+    xi1_scores = np.column_stack((list(xi1_df.iloc[:,i].sort_values(ascending=False) for i in range(len(xi1_df.columns)))))
+    if class_score_name:
+        xi1_scores_df = pd.DataFrame(xi1_scores,columns=linkage_cluster_order)
+        xi1_scores_df.to_csv('/bigdata/isaac/'+str(class_score_name)+'.csv')
+    xi1_ind_arr = np.column_stack((list(xi1_df.iloc[:,i].sort_values(ascending=False).index for i in range(len(xi1_df.columns)))))
+    if class_score_name:
+        xi1_ind_arr_df = pd.DataFrame(xi1_ind_arr, columns=linkage_cluster_order)
+        xi1_ind_arr_df.to_csv('/bigdata/isaac/'+str(class_score_name)+'_ind.csv')
     xi1_ind_arr = xi1_ind_arr[:n_markers,:]
+    #print (xi1_ind_arr)
 
     #vertically stack the gene index arrays
     stack = np.vstack((xi0_ind_arr,xi0p5_ind_arr,xi1_ind_arr))
@@ -728,7 +745,7 @@ def compute_marker_genes(df, meta_data_df, cluster_indices, linkage_cluster_orde
     #get unique marker genes, preserving order
     marker_genes, idx = np.unique(smash, return_index=True)
     marker_genes_sorted = marker_genes[np.argsort(idx)]
-    #print (f'len marker_Genes_sorted {len(marker_genes_sorted)}')
+    print (f'len marker_Genes_sorted {len(marker_genes_sorted)}')
     
     
     #NEW########
@@ -755,9 +772,11 @@ def compute_marker_genes(df, meta_data_df, cluster_indices, linkage_cluster_orde
     #for each row, get index of max column value
     ind = np.argmax(xi0p5_marker, axis=1)
     #print (ind)
+    #print (len (ind))
     #get indices of sorted list
     ind_s = np.argsort(ind,axis = 0)
     #print (ind_s)
+    #print (len(ind_s))
     #reorder marker genes accordingly
     marker_genes_sorted_final = [marker_genes_sorted[i] for i in ind_s]
     print (f'len marker_genes_sorted_final {len(marker_genes_sorted_final)}')
@@ -786,21 +805,36 @@ def get_heatmap_labels(mgs, ind, ind_s):
     #use list of indices corresponding to column with max value of marker array
     #to get sorted version
     indy = np.sort(ind)
-
+    #get unique indy
+    seen = set()
+    indy_unique = []
+    for item in indy:
+        if item not in seen:
+            indy_unique.append(item)
+            seen.add(item)
+    print (indy_unique)
+    print (len(indy_unique))
     #get gene indices
     g = []
-    for i in np.arange(0,len(np.unique(ind))):
+    #for i in np.arange(0,len(ind)):
         #print(i)
-        x = ind_s[np.where(indy==i)]
+        #x = ind_s[np.where(indy==i)]
+        #g.append(x)
+    for i,v in enumerate(indy_unique):
+        #print(i)
+        x = ind_s[np.where(indy==v)]
         g.append(x)
-
+    
+    print (g)
+    print (len(g))
     #use full marker gene list to convert list of indices to gene names
     tg = []
-    for i in g:
-        gene = [mgs[x] for x in i]
+    for g_sub in g:
+        gene = [mgs[x] for x in g_sub]
         #print(gene)
         tg.append(gene)
-
+    #drop empty arrays
+    #tg = [arr for arr in tg if len(arr) > 0]
     #formatting fix #1 - add newline char after each gene so labels are stacked vertically
     tgf = []
     for i,x in enumerate(tg):
@@ -843,7 +877,6 @@ def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs
     ax.set_xticks(ticks = pos, labels = linkage_cluster_order)
     ax.set_yticks([])
     ax.vlines(change_indices, 0 ,len(df.index), colors='gray', lw = 0.1)
-
     ypos = 0
     vertical_spacing = 0.2
     for i,v in enumerate(tg):
@@ -851,7 +884,6 @@ def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs
         plt.text(xpos,ypos, tgfs[i], 
                  verticalalignment='top', horizontalalignment = 'left', color="gray", fontsize = fs_waterfall, fontweight = 'bold', fontname = 'monospace')
         ypos+=int(len(tg[i]))
-    
     if cluster_labels:
         ypos = 0
         for i,l in enumerate(zip(tg,cluster_labels)):
@@ -1350,6 +1382,7 @@ def drop_clusters(cl_mg_dict,gene_list = None):
     clusters_to_drop = []
     for k,v in cl_mg_dict.items():
         if len(v) == 0:
+            print ('here')
             clusters_to_drop.append(k)
         #after qualitative review, remove cluster 25 containting glut marker Slc17a6 , cluster 3 contating only Ddit4l
         if gene_list != None:    

@@ -43,7 +43,7 @@ from bokeh.resources import INLINE
 import dimorph_processing as dp
 import cell_comparison as cc
 
-def cluster_transfer_majority_vote(arr_xy_sd,arr_xy_amy,distance_threshold,sd_metadata_df_subset,amy_metadata_df_subset):
+""" def cluster_transfer_majority_vote(arr_xy_sd,arr_xy_amy,distance_threshold,sd_metadata_df_subset,amy_metadata_df_subset):
     '''takes 2, 2D tsne x/y arrays, iterates through each point of arr1, finds all neighbors within distance_threshold. If more than
     10 neighbors, uses first 10. For each pts with at least 5 neighbors, uses index to count representation of cell types in metadata_df, 
     and performs majority voting to assign cell type and cell class.'''
@@ -121,7 +121,8 @@ def cluster_transfer_majority_vote(arr_xy_sd,arr_xy_amy,distance_threshold,sd_me
             sd_metadata_df_subset.iloc[3,idx] = 'no neighbors'
             sd_metadata_df_subset.iloc[4,idx] = 'NA - no neighbors'
         
-    return sd_metadata_df_subset
+    return sd_metadata_df_subset """
+
 
 def plot_tsne_class_colors(sd_metadata_df_subset_w_amc, amy_sd_arr_tsne, meta_data_df_pca, outputfolder, outputname, savefig = False):
     #get sd cell type labels determined from majority voting using amy labels
@@ -238,13 +239,14 @@ def get_hcodes(folder, txt_file, cell_class, old_2_new_amy_dict, metadata_df):
     hexa_df.insert(3,'marker_name',m)
     #loop thru metadata isolated for specified class, get hexacodes
     hcodes = []
-    print (hexa_df)
+    #print (hexa_df)
     for x in list(metadata_df.loc['amy_markers',metadata_df.loc['amy_class']==cell_class]):
         hc = hexa_df.iloc[np.where(hexa_df.loc[:,'marker_name']==x)[0],4].values
         if hc == np.NaN:
             print ('NAN')
         #assign any blanks as NA
         if not hc:
+            print ('NA')
             hc = np.array(['NA'])
         hcodes.append(hc)
     hcodes = np.concatenate(hcodes,axis=0)
@@ -255,3 +257,29 @@ def get_hcodes(folder, txt_file, cell_class, old_2_new_amy_dict, metadata_df):
     hcodes_row = pd.DataFrame(hcodes,index = ['hexacode'], columns = cols)
 
     return hcodes_row
+
+def cluster_transfers_2_class_and_fn(sd_metadata_df_subset_w_amc, amy_metadata_df_subset):
+    '''takes output of cluster_transfer_majority_vote and uses amy_metadata to map cluster 
+    transferred labels to class and full name'''    
+    _, idx = np.unique(amy_metadata_df_subset.loc['markers'], return_index=True)
+    am = np.array(amy_metadata_df_subset.loc['markers'][np.sort(idx)])
+
+    _, idx = np.unique(amy_metadata_df_subset.loc['full_name'], return_index=True)
+    afn = np.array(amy_metadata_df_subset.loc['full_name'][np.sort(idx)])
+
+    am_2_afn_dict = dict(zip(am,afn))
+
+    #add case handeling for no majority or no neighbors (set full name to the same thing)
+    am_2_afn_dict['no majority ct'] = 'no majority ct'
+    am_2_afn_dict['no neighbors'] = 'no neighbors'
+
+    fn_transferred = []
+    for x in sd_metadata_df_subset_w_amc.loc['amy_markers']: 
+        fn_transferred.append(am_2_afn_dict[x])
+
+    sd_metadata_df_subset_w_amc.loc['amy_full_name'] = fn_transferred
+
+    #and finally, fill amy_class row using first part of amy_full_name
+    sd_metadata_df_subset_w_amc.loc['amy_class'] = [x.split('-')[0] for x in sd_metadata_df_subset_w_amc.loc['amy_full_name']]
+
+    return sd_metadata_df_subset_w_amc

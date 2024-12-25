@@ -183,7 +183,7 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_fn,thresh
 
     
     else:
-        expr = df
+        expr = c_expr
         expr_bool = expr.mask(expr>0, other = 1)
         gene_sum =  np.array(expr_bool.sum(axis=1))
         gene_sum = np.reshape(gene_sum,(expr_bool.shape[0],1))
@@ -200,8 +200,9 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_fn,thresh
                 genes_to_keep_ind.append(i)
         #update c_expr keeping only genes above threshold
         c_expr = c_expr.iloc[genes_to_keep_ind,:]
-
+        #print (gene_sum)
         print (c_expr.shape)
+        #print (c_expr.index)
 
 
     n_genes = c_expr.shape[0]
@@ -461,8 +462,10 @@ def get_plot_labels(mg_cl_dict):
 
 def do_u_test_w_fdr(expr1,expr2):
     '''Computes mann whiteney u test for each gene (row) between expr1 and expr2. returns results in dataframe.'''
+    #get intersected gene list
+    intersected_gene_ind = expr1.index.intersection(expr2.index)
     #construct df to store results of mann whitney test for every gene
-    u_test_df = pd.DataFrame(index = expr1.index, columns = ['U','p','p_adj'])
+    u_test_df = pd.DataFrame(index = intersected_gene_ind, columns = ['U','p','p_adj'])
     #do mann whiteney for every gene
     for i in u_test_df.index:
         U, p = mannwhitneyu(expr1.loc[i,:],expr2.loc[i,:], alternative='two-sided', method="exact")

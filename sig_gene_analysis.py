@@ -3,7 +3,7 @@ import os
 import glob
 import pandas as pd
 import numpy as np
-from pandas_ods_reader import read_ods
+#from pandas_ods_reader import read_ods
 from copy import deepcopy
 import pprint
 import json
@@ -38,18 +38,25 @@ import bokeh
 from bokeh.resources import INLINE
 from scipy.stats import mannwhitneyu, false_discovery_control, wilcoxon
 import csv
+from matplotlib.patches import Rectangle
+import matplotlib as mpl
 
 import dimorph_processing as dp
 import sex_stats as ss
 
-def format_genes(genes_df, metadata, mg_cl_dict, output_folder, out_file_name, write_to_file = False):
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
+
+def format_genes(genes_df, metadata, cluster_fns, output_folder, out_file_name, write_to_file = False):
     '''formats long form csv of outputted from volcano_plot() found in sex_stats.py into wide form, genes x test'''
     
-    columns = [item for item in sorted(np.unique(metadata.loc['cluster_label'])) for _ in range(8)] 
+    #columns = [item for item in sorted(np.unique(metadata.loc['cluster_label'])) for _ in range(8)] 
     # Pivot the DataFrame to get delta and -log10(p_adj) in different columns for each gene
-    genes_df_pivot_delta = genes_df.pivot_table(index='gene', columns=['id', 'test'], values=['delta'])
+    genes_df_pivot_delta = genes_df.pivot_table(index='gene', columns=['cluster_fn', 'test'], values=['delta'], sort = False)
+    #print (genes_df_pivot_delta.columns)
+    
     # Pivot the DataFrame to get delta and -log10(p_adj) in different columns for each gene
-    genes_df_pivot_p = genes_df.pivot_table(index='gene', columns=['id', 'test'], values=['p_adj'])
+    genes_df_pivot_p = genes_df.pivot_table(index='gene', columns=['cluster_fn', 'test'], values=['p_adj'], sort = False)
     # Interleave columns of A and B
     new_columns = [col for pair in zip(genes_df_pivot_delta.columns, genes_df_pivot_p.columns) for col in pair]
     genes_df_pivot_combined = pd.concat([genes_df_pivot_delta, genes_df_pivot_p], axis=1)
@@ -57,10 +64,10 @@ def format_genes(genes_df, metadata, mg_cl_dict, output_folder, out_file_name, w
     
     #add in cell types using mg_cl_dict
     genes_df_pivot_combined_w_ct = genes_df_pivot_combined.copy()
-    ct = [mg_cl_dict[x] for x in genes_df_pivot_combined.columns.get_level_values(1)]
-    ct_flat = ['-'.join(x) for x in ct]
-    new_columns = pd.MultiIndex.from_arrays([ct_flat] + [genes_df_pivot_combined_w_ct.columns.get_level_values(i) for i in range(genes_df_pivot_combined_w_ct.columns.nlevels)])
-    genes_df_pivot_combined_w_ct.columns = new_columns
+    #ct = [mg_cl_dict[x] for x in genes_df_pivot_combined.columns.get_level_values(1)]
+    #ct_flat = ['-'.join(x) for x in ct]
+    #new_columns = pd.MultiIndex.from_arrays([ct_flat] + [genes_df_pivot_combined_w_ct.columns.get_level_values(i) for i in range(genes_df_pivot_combined_w_ct.columns.nlevels)])
+    #genes_df_pivot_combined_w_ct.columns = new_columns
     
     if write_to_file:
         genes_df_pivot_combined_w_ct.to_csv(output_folder + out_file_name + '.csv')
@@ -139,13 +146,14 @@ def plot_sig_gene_heatmap(delta_df,ind_2_title_dict,output_folder = None, outfil
     plt.show()
 
 def plot_sig_gene_heatmap_igi(sig_deltas,
+                              p_mask,
                               title,
                               subset = 20,
                               output_folder = None, 
                               outfile_name = None, 
                               savefig = False):
     '''same as plot_sig_gene_heatmap but uses stacked single, reindexed delta_df for independent group specific gene list index (igi) for each group'''
-    fig, axes = plt.subplots(figsize=(15, 5), sharex=False)  # Adjust height to fit all heatmaps
+    fig, axes = plt.subplots(figsize=(15, subset//3), sharex=False)  # Adjust height to fit all heatmaps
     vmin = sig_deltas.min().min()
     vmax = sig_deltas.max().max()
     sns.heatmap(sig_deltas[:subset], 
@@ -154,10 +162,14 @@ def plot_sig_gene_heatmap_igi(sig_deltas,
                 cmap='seismic', 
                 cbar=True,  
                 cbar_kws={'label': '<-' + str(title[2]) + ' ' + str(title[1]) +'->'})
+    rows,cols = np.where(p_mask.iloc[:subset,:])
+    plt.plot(cols+0.5,rows+0.5,'k.',markersize = 10,c = 'yellow')
     #axes.collections[0].colorbar.set_label(str(title[2]) + '      ' + str(title[1]))
-    axes.set_xticklabels(sig_deltas.columns.get_level_values(2)) #use (2) for id, (0) for cell type
+    axes.set_xticklabels(sig_deltas.columns.get_level_values(1), rotation = 75) #use (2) for id, (0) for cell type
     axes.set_xlabel('')
     axes.set_title(str(title))
+    #fix x tick cut off when saving fig 
+    plt.tight_layout()
 
     '''
     # Plot each heatmap on its respective subplot
@@ -174,18 +186,79 @@ def plot_sig_gene_heatmap_igi(sig_deltas,
         ax.set_xlabel('')
     '''
     if savefig:
-        plt.savefig(output_folder+outfile_name+'.png')
+        plt.savefig(output_folder+outfile_name+'.pdf')
     # Show the entire figure with all 4 heatmaps
     plt.tight_layout()
     plt.show()
 
-def p_mask_max_abs(p_adj_test_df,delta_test_df,delta_fc = 1.5,p_adj = 0.05):
+def p_mask_max_abs(p_adj_test_df,delta_test_df,delta_fc = 0.58,p_adj = 0.05):
     '''create a boolean mask using p_adj df, use mask to filter FCs (p_delta df), setting all other values to zero.
     take max of abs value of filtered p_delta df and sort gene index high to low'''
-    mask = p_adj_test_df < 0.05
+    #drop rows with nans (representing genes not considered for a given cell type)
+    p_adj_test_df = p_adj_test_df.dropna()
+    delta_test_df = delta_test_df.dropna()
+    mask = p_adj_test_df < p_adj
+    #p_mask = p_adj_test_df < p_adj
+    #d_mask = np.abs(delta_test_df)> delta_fc
+    #mask = np.logical_and(p_mask,d_mask)
+    #print (mask)
+    #print (mask.shape)
+    
+    
     filtered_sig_deltas = delta_test_df.where(mask.values, 0)
     filtered_sig_deltas_abs = np.abs(filtered_sig_deltas)
     max_fc = filtered_sig_deltas_abs.max(axis = 1)
     max_fc_sorted = max_fc.sort_values(ascending = False)
-    return max_fc_sorted
-    
+    mask_sorted = mask.reindex(index = max_fc_sorted.index)
+    sig_deltas_sorted = delta_test_df.reindex(index = max_fc_sorted.index)
+    return max_fc_sorted, sig_deltas_sorted, mask_sorted
+
+def plot_sig_gene_heatmap_sct(sig_deltas,
+                              p_mask,
+                              title,
+                              subset = 20,
+                              output_folder = None, 
+                              outfile_name = None, 
+                              savefig = False):
+    '''same as plot_sig_gene_heatmap but uses stacked single, reindexed delta_df for independent group specific gene list index (igi) for each group'''
+    fig, axes = plt.subplots(figsize=(15, subset//3), sharex=False)  # Adjust height to fit all heatmaps
+    vmin = sig_deltas.min().min()
+    vmax = sig_deltas.max().max()
+    sns.heatmap(sig_deltas[:subset], 
+                vmin=vmin, 
+                vmax=vmax,
+                cmap='seismic', 
+                cbar=True,  
+                cbar_kws={'label': '<-' + 'N/f '  + ' B/m'+'->'})
+    q_rows,q_cols = np.where(p_mask.iloc[:subset,:])
+    plt.plot(q_cols+0.5,q_rows+0.5,'k.',markersize = 10,c = 'yellow')
+    d_rows,d_cols = np.where(np.abs(sig_deltas.iloc[:subset,:])>0.58)
+    plt.plot(d_cols+0.5,d_rows+0.5,'o',markersize = 10,c = 'white', markerfacecolor = 'none')
+    #rect = Rectangle((d_cols, d_rows), 1, 1, fill=False, edgecolor='green', linewidth=2)
+    #axes.add_patch(rect)
+    #axes.collections[0].colorbar.set_label(str(title[2]) + '      ' + str(title[1]))
+    axes.set_xticklabels(sig_deltas.columns.get_level_values(2), rotation = 75) #use (2) for id, (0) for cell type
+    axes.set_xlabel('')
+    axes.set_title(str(title))
+    #fix x tick cut off when saving fig 
+    plt.tight_layout()
+
+    '''
+    # Plot each heatmap on its respective subplot
+    for i, ax in enumerate(axes):
+
+        vmin = delta_df.min().min()
+        vmax = delta_df.max().max()
+        # Set the title for each subplot
+        ax.set_title(ind_2_title_dict[i+1])
+        
+        # Plot the heatmap, selecting every 4th column starting at i for each subplot
+        sns.heatmap(delta_df.iloc[:, i::4], ax=ax, vmin=vmin, vmax=vmax, cbar=True)
+        ax.set_xticklabels(delta_df.columns.get_level_values(2)) #use (2) for id, (0) for cell type
+        ax.set_xlabel('')
+    '''
+    if savefig:
+        plt.savefig(output_folder+outfile_name+'.pdf')
+    # Show the entire figure with all 4 heatmaps
+    plt.tight_layout()
+    plt.show()

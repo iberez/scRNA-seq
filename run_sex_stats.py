@@ -41,7 +41,7 @@ import bokeh
 from bokeh.resources import INLINE
 from adjustText import adjust_text
 from scipy.stats import mannwhitneyu, false_discovery_control, wilcoxon
-
+import matplotlib as mpl
 
 import dimorph_processing as dp
 import cell_comparison as cc
@@ -50,7 +50,8 @@ import sex_stats as ss
 
 
 ##run sex stats
-
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
 
 def run_sex_stats(df,metadata_df,cell_class,run_folder,run_subfolders,delta_folder):
     '''wraps functions in sex stats, run after determining dlr df/metadata'''
@@ -103,8 +104,8 @@ def run_sex_stats(df,metadata_df,cell_class,run_folder,run_subfolders,delta_fold
                                                                 cluster_fn=c,
                                                                 threshold_prc_h=70,
                                                                 threshold_prc_l=10, 
-                                                                r_bn = 2, 
-                                                                r_mf = 2, 
+                                                                r_bn = np.log2(1.5), 
+                                                                r_mf = np.log2(1.5), 
                                                                 cell_class=cell_class, 
                                                                 folder = delta_folder,
                                                                 normalize = True,
@@ -129,6 +130,27 @@ def run_sex_stats(df,metadata_df,cell_class,run_folder,run_subfolders,delta_fold
         _, _, _, _ = ss.run_volcano_analysis(delta_data_folder, utest_output_folder,volcano_output_folder, c, cell_class, all_counts_df, savefig = True, write_to_file = True)
     print('volcano analysis complete. results in: ', volcano_output_folder)
 
+    #sig gene delta delta plots
+    sig_genes_df = pd.read_csv(volcano_output_folder + 'sig_genes.csv',header=None)
+    for c in fn:
+        _,counts_df = ss.compute_group_gene_expression_differences(df,
+                                                            metadata_df,
+                                                            cluster_fn=c,
+                                                            threshold_prc_h=70,
+                                                            threshold_prc_l=10, 
+                                                            r_bn = np.log2(1.5), 
+                                                            r_mf = np.log2(1.5), 
+                                                            cell_class=cell_class, 
+                                                            folder = delta_folder,
+                                                            normalize = True,
+                                                            n_factor = 20000,          
+                                                            mode = 'sig_genes',
+                                                            sig_genes_df = sig_genes_df,
+                                                            savefig = True, 
+                                                            write_to_file=True)
+        print ('Finished processing cluster [sig mode]: ', c)
+    #all_counts_df = pd.concat([all_counts_df,counts_df])
+    print ('delta analysis [sig mode] complete, results in: ', delta_folder)
     #save df and metadata df
     metadata_df.to_json(run_folder + cell_class + '_metadata_df_dlr.json')
     df.to_feather(run_folder + cell_class + '_df_dlr.feather')

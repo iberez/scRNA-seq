@@ -38,8 +38,12 @@ import bokeh
 from bokeh.resources import INLINE
 from scipy.stats import mannwhitneyu, false_discovery_control, wilcoxon
 import csv
+import matplotlib as mpl
 
 import dimorph_processing as dp
+
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
 
 def compute_cluster_sex_stats(meta_data_df, prc = False):
     '''takes metadata and counts number of cells for each of 'Breeder-F', 'Breeder-M', 'Naïve-F', 'Naïve-M' for each cluster as well as n_mice
@@ -78,13 +82,16 @@ def compute_cluster_sex_stats(meta_data_df, prc = False):
     
     return sex_stats_df
 
-def drop_low_representation_cts(cluster_sex_stats_df,df, metadata_df, min_cells = 10):
+def drop_low_representation_cts(cluster_sex_stats_df,df, metadata_df, min_cells = 10, max_cells = 500):
     '''use cluster sex stats df to get list of cell types with less than min_cells in any group, then drop these cell types
     from metadata and update df accordingly'''
     clusters_2_drop = []
     for c in cluster_sex_stats_df.index:
         for cnt in cluster_sex_stats_df.loc[c,['Breeder-F','Breeder-M','Naïve-F','Naïve-M']]:
             if cnt < min_cells:
+                if c not in clusters_2_drop:
+                    clusters_2_drop.append(c)
+            if cnt > max_cells:
                 if c not in clusters_2_drop:
                     clusters_2_drop.append(c)
     #update metadata
@@ -301,14 +308,16 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_fn,thresh
                 if mode == 'sig_genes':
                     #print ('sig gene detected')
                     #print (txt)
-                    if txt in ΔBN_m_sig_genes:
-                        ax.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c='red', marker="^", label = 'ΔBN_m_sig_genes')
-                        ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs, c = 'red')
-                    #for g in ΔBN_f_sig_genes:
-                        #if g == txt:
-                    if txt in ΔBN_f_sig_genes: 
-                        ax.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c='green', marker="o", label = 'ΔBN_f_sig_genes')
-                        ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs, c = 'green')    
+                    #if txt in ΔBN_m_sig_genes:
+                        #ax.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c='red', marker="^", label = 'ΔBN_m_sig_genes')
+                        #ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs, c = 'red')
+                    #if txt in ΔBN_f_sig_genes: 
+                        #ax.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c='green', marker="o", label = 'ΔBN_f_sig_genes')
+                        #ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs, c = 'green')    
+                    #only show sig genes for both axes to clean up plot/show overlap
+                    if txt in ΔBN_m_sig_genes and txt in ΔBN_f_sig_genes:
+                        ax.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c='orange', marker="^", label = "ΔBN_sig_genes")
+                        ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs, c = 'orange')
                 #conditional labeling if gene is far out
                 if mode == 'delta':
                     if txt in list(far_out_genes):
@@ -387,12 +396,16 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_fn,thresh
                 if mode == 'sig_genes':
                     #print ('sig gene detected')
                     #print (txt)
-                    if txt in Δmf_B_sig_genes:
-                        ax.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=1, c='red', marker="^", label = "Δmf_B_sig_genes")
-                        ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs, c = 'red')
-                    if txt in Δmf_N_sig_genes:
-                        ax.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=1, c='green', marker="o", label = "Δmf_N_sig_genes")
-                        ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs, c = 'green')
+                    #if txt in Δmf_B_sig_genes:
+                        #ax.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=1, c='red', marker="^", label = "Δmf_B_sig_genes")
+                        #ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs, c = 'red')
+                    #if txt in Δmf_N_sig_genes:
+                        #ax.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=1, c='green', marker="o", label = "Δmf_N_sig_genes")
+                        #ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs, c = 'green')
+                    #only show sig genes for both axes to clean up plot/show overlap
+                    if txt in Δmf_B_sig_genes and txt in Δmf_N_sig_genes:
+                        ax.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=1, c='orange', marker="^", label = "Δmf_sig_genes")
+                        ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs, c = 'orange')
 
                 #conditional labeling if gene is far out
                 if mode == 'delta':
@@ -520,14 +533,15 @@ def volcano_plot(U_test_df,delta_df, cell_class, cluster_fn, all_counts_df, test
     #print (v_df['-log10(p_adj)'])
     # Define significance threshold
     alpha = 0.05
+    log_fc = 1.5
 
     # Plot volcano plot
     fig,ax = plt.subplots()
     ax.scatter(v_df['delta'], v_df['-log10(p_adj)'], color='blue', alpha=0.5)
     ax.set_title(cell_class +  ' ' + test_name + ' ' + '(' + str(all_counts_df.iloc[0]) + ',' + str(all_counts_df.iloc[1]) + ')' + ' Cluster: ' + cluster_fn)
     ax.axhline(-np.log10(alpha), color='red', linestyle='--', linewidth=1)
-    ax.axvline(x=1, color='red', linestyle='--', linewidth=1)
-    ax.axvline(x=-1, color='red', linestyle='--', linewidth=1)
+    ax.axvline(x=np.log2(log_fc), color='red', linestyle='--', linewidth=1)
+    ax.axvline(x=-np.log2(log_fc), color='red', linestyle='--', linewidth=1)
     ax.set_xlabel('ΔLog2 Fold Change')
     ax.set_ylabel('-log10(p_adj)')
     #add gene label if beyond alpha and log_fc<-1 or >1
@@ -542,7 +556,7 @@ def volcano_plot(U_test_df,delta_df, cell_class, cluster_fn, all_counts_df, test
 
 
         if v_df.loc[txt, '-log10(p_adj)'] > -np.log10(alpha):
-            if v_df.loc[txt, 'delta'] > 1 or v_df.loc[txt, 'delta'] < -1:
+            if v_df.loc[txt, 'delta'] > np.log2(log_fc) or v_df.loc[txt, 'delta'] < -np.log2(log_fc):
                 #standard labeling
                 ax.annotate(txt, (v_df.loc[txt,'delta'], v_df.loc[txt,'-log10(p_adj)']),fontsize = 10)
                 #with open(output_folder + "sig_gene_index_list.txt", "a") as myfile:

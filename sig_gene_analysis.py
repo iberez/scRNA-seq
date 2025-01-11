@@ -191,10 +191,11 @@ def plot_sig_gene_heatmap_igi(sig_deltas,
     plt.tight_layout()
     plt.show()
 
-def p_mask_max_abs(p_adj_test_df,delta_test_df,delta_fc = 0.58,p_adj = 0.05):
+def p_mask_max_abs(p_adj_test_df,delta_test_df,delta_fc = np.log2(1.5),p_adj = 0.05):
     '''create a boolean mask using p_adj df, use mask to filter FCs (p_delta df), setting all other values to zero.
     take max of abs value of filtered p_delta df and sort gene index high to low'''
     #drop rows with nans (representing genes not considered for a given cell type)
+    #print (p_adj_test_df.shape)
     p_adj_test_df = p_adj_test_df.dropna()
     delta_test_df = delta_test_df.dropna()
     mask = p_adj_test_df < p_adj
@@ -221,7 +222,7 @@ def plot_sig_gene_heatmap_sct(sig_deltas,
                               outfile_name = None, 
                               savefig = False):
     '''same as plot_sig_gene_heatmap but uses stacked single, reindexed delta_df for independent group specific gene list index (igi) for each group'''
-    fig, axes = plt.subplots(figsize=(15, subset//3), sharex=False)  # Adjust height to fit all heatmaps
+    fig, axes = plt.subplots(figsize=(5, subset//3), sharex=False)  # Adjust height to fit all heatmaps
     vmin = sig_deltas.min().min()
     vmax = sig_deltas.max().max()
     sns.heatmap(sig_deltas[:subset], 
@@ -237,7 +238,7 @@ def plot_sig_gene_heatmap_sct(sig_deltas,
     #rect = Rectangle((d_cols, d_rows), 1, 1, fill=False, edgecolor='green', linewidth=2)
     #axes.add_patch(rect)
     #axes.collections[0].colorbar.set_label(str(title[2]) + '      ' + str(title[1]))
-    axes.set_xticklabels(sig_deltas.columns.get_level_values(2), rotation = 75) #use (2) for id, (0) for cell type
+    axes.set_xticklabels(sig_deltas.columns.get_level_values(2), rotation = 0) #use (2) for id, (0) for cell type
     axes.set_xlabel('')
     axes.set_title(str(title))
     #fix x tick cut off when saving fig 
@@ -262,3 +263,23 @@ def plot_sig_gene_heatmap_sct(sig_deltas,
     # Show the entire figure with all 4 heatmaps
     plt.tight_layout()
     plt.show()
+
+def linkage_sort_sig_genes(cluster_fn, sig_deltas_sorted,mask_sorted, subset, output_folder, output_filename, linkage_alg = 'ward', dist_metric = 'euclidean', savefig = False):
+    '''sort sig genes using linkage'''
+    sig_deltas_subset = sig_deltas_sorted[:subset]
+    mask_subset = mask_sorted[:subset]
+    D_cond = pdist(np.array(sig_deltas_subset), metric=dist_metric)
+    Z = linkage(np.array(sig_deltas_subset), linkage_alg, metric= dist_metric)
+    linkage_gene_order = leaves_list(optimal_leaf_ordering(Z,D_cond))
+    Z_ordered = optimal_leaf_ordering(Z,D_cond)
+    if savefig:
+        fig,ax = plt.subplots()
+        plt.title('Optimal Leaf Ordered Linkage: ' + linkage_alg + '_' + dist_metric)
+        dn = dendrogram(Z_ordered)
+        ax.set_xticklabels(list(sig_deltas_subset.index[linkage_gene_order]))
+        plt.savefig(output_folder + output_filename + '.pdf',transparent = True)
+        plt.show()
+    linkage_index = sig_deltas_subset.index[linkage_gene_order]
+    sig_deltas_subset_linkage = sig_deltas_subset.reindex(linkage_index)
+    mask_subset_linkage = mask_subset.reindex(linkage_index)
+    return sig_deltas_subset_linkage, mask_subset_linkage

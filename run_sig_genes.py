@@ -118,19 +118,41 @@ def run_sig_genes(all_genes_folder, sex_stats_folder, sig_gene_heatmap_folder, c
         ct_size = metadata_df_dlr.loc[:,metadata_df_dlr.loc['full_name',:]==ct].shape[1]
         dimorph_cell_types_df_sorted.loc[ct,'ct_size'] = ct_size
         #print (ct, ct_size)
-    ax = dimorph_cell_types_df_sorted.sort_values(by='gene_count').iloc[:,1:5].dropna().plot.barh(stacked=True)
-    ax.set_xlabel('gene_counts')
+    #ax = dimorph_cell_types_df_sorted.sort_values(by='gene_count').iloc[:,1:5].dropna().plot.barh(stacked=True)
+    #ax.set_xlabel('gene_counts')
+    #plt.tight_layout()
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6), gridspec_kw={'width_ratios': [3, 1]}, sharey=True)
+    # Plot the stacked bar plot
+    dimorph_cell_types_df_sorted.sort_values(by='gene_count').iloc[:, 1:5].dropna().plot(kind='barh', stacked=True, ax=axes[0],colormap='tab20b')
+    axes[0].set_ylabel("cluster_fn")
+    axes[0].set_xlabel("sig gene count")
+    axes[0].legend(title="Categories", bbox_to_anchor=(1.05, 1), loc='upper left')
+
+    # Plot the ct_size bar plot
+    dimorph_cell_types_df_sorted.sort_values(by='gene_count').dropna()['ct_size'].plot(kind='barh', color='gray', ax=axes[1])
+    axes[1].set_title("Size")
+    axes[1].set_xlabel("num cells")
+
+    # Adjust layout
     plt.tight_layout()
+    plt.show()
     if savefig:
-        plt.savefig(ct_bar_plots_folder + cell_class + '_ranked_cts_all_groups.pdf', transparent = True)
+        plt.savefig(ct_bar_plots_folder + cell_class + '_ranked_cts_all_groups_w_num_cells.pdf', transparent = True)
     plt.show()
 
     #create a horizonatly stacked multiplot, using order of stacked
-    fig,axs = plt.subplots(1,5, sharey=True, figsize = (15,10))
-    axs[0].barh(y = dimorph_cell_types_df_sorted.index, width=dimorph_cell_types_df_sorted.loc[:,'ΔBN_m'])
-    axs[1].barh(y = dimorph_cell_types_df_sorted.index, width=dimorph_cell_types_df_sorted.loc[:,'ΔBN_f'])
-    axs[2].barh(y = dimorph_cell_types_df_sorted.index, width=dimorph_cell_types_df_sorted.loc[:,'Δmf_B'])
-    axs[3].barh(y = dimorph_cell_types_df_sorted.index, width=dimorph_cell_types_df_sorted.loc[:,'Δmf_N'])
+    colors = mpl.colormaps['tab20b'].colors
+    c_mf_N = colors[19]
+    c_mf_B = colors[13]
+    c_BN_f = colors[6]
+    c_BN_m = colors[0]
+
+
+    fig,axs = plt.subplots(1,5, sharey=True, figsize = (10,8))
+    axs[0].barh(y = dimorph_cell_types_df_sorted.index, width=dimorph_cell_types_df_sorted.loc[:,'ΔBN_m'], color = c_BN_m)
+    axs[1].barh(y = dimorph_cell_types_df_sorted.index, width=dimorph_cell_types_df_sorted.loc[:,'ΔBN_f'], color = c_BN_f)
+    axs[2].barh(y = dimorph_cell_types_df_sorted.index, width=dimorph_cell_types_df_sorted.loc[:,'Δmf_B'], color = c_mf_B)
+    axs[3].barh(y = dimorph_cell_types_df_sorted.index, width=dimorph_cell_types_df_sorted.loc[:,'Δmf_N'], color = c_mf_N)
     axs[4].barh(y = dimorph_cell_types_df_sorted.index, width = dimorph_cell_types_df_sorted.loc[:,'ct_size'], color = 'gray')
     axs[0].set_title('ΔBN_m')
     axs[0].set_xlabel('no. significant genes')
@@ -153,4 +175,4 @@ def run_sig_genes(all_genes_folder, sex_stats_folder, sig_gene_heatmap_folder, c
     plt.show()
     if write_to_file:
         dimorph_cell_types_df_sorted.to_feather(ct_bar_plots_folder + cell_class + '_dimorph_cell_types_df_sorted.feather')
-    return sig_deltas, sig_p_adj, dimorph_cell_types_df_sorted
+    return sig_deltas, sig_p_adj, sig_genes, dimorph_cell_types_df_sorted

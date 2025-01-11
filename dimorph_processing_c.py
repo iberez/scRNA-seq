@@ -120,7 +120,7 @@ def process(df_orig, meta_data_df_orig, sex_gene_list, IEG_list, folder, cell_cl
     df_pre_linkage_raw = df.reindex(columns=meta_data_df_pre_linkage.columns)
     
     print ('verify raw prelinkage df and raw metadata df have same columns:')
-    print (df_pre_linkage_raw.columns == meta_data_df_pre_linkage.columns)
+    print (np.all(df_pre_linkage_raw.columns == meta_data_df_pre_linkage.columns))
     
     df_post_linkage, meta_data_df_post_linkage, linkage_cluster_order_og, Z_ordered, mpg_pca, linkage_cluster_order_po = dp.inter_cluster_sort(df_pre_linkage_raw,
                                                 meta_data_df_pre_linkage, 
@@ -139,7 +139,7 @@ def process(df_orig, meta_data_df_orig, sex_gene_list, IEG_list, folder, cell_cl
     plt.figure()
     ax = sns.heatmap(mpg_pca_pl_df.corr(method='pearson'), yticklabels=True, xticklabels=True)
     plt.title('correlation post linkage_f')
-    plt.savefig(folder + '_' 'cell_class_'+'mpg_pca_corr_post_linkage_f')
+    #plt.savefig(folder + '_' 'cell_class_'+'mpg_pca_corr_post_linkage_f')
     plt.show()
 
     #intracluster sort
@@ -194,6 +194,6 @@ def process(df_orig, meta_data_df_orig, sex_gene_list, IEG_list, folder, cell_cl
                         savefig = True,
                         cell_class = str(cell_class)+'_unfiltered_proc')
     
-    print (df_marker_log_and_std.columns == meta_data_df_plis.columns)
+    print (np.all(df_marker_log_and_std.columns == meta_data_df_plis.columns))
 
     return df_marker, arr_tsne, meta_data_df_plis, linkage_cluster_order, df_marker_log_and_std_col, df_plis, cluster_indices, df_marker_log_and_std, df_ge

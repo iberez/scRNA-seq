@@ -33,10 +33,15 @@ from datetime import date
 #import mpld3
 import dimorph_processing as dp
 import csv
+import matplotlib as mpl
 today = str(date.today())
 
 def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered, cluster_indices_filtered, folder, cell_class, sort=False, write_to_file = False):
     '''uses plis_filtered metadata to reshuffle df_ge, then re process thru standard pipe except skip clustering'''
+    #change matplotlib font type to make compatibile with illustrator
+    mpl.rcParams['pdf.fonttype'] = 42
+    mpl.rcParams['ps.fonttype'] = 42
+    
     #get expr matrix with filtered cells but with before all genes (before feat selection)
     df_ge  = df_ge.reindex(columns = meta_data_df_plis_filtered.columns)
     count = np.isinf(df_ge).values.sum() 
@@ -50,6 +55,7 @@ def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered,
     status_df = dp.intialize_status_df()
     gene_index, df, status_df = dp.get_top_cv_genes(df = df_ge, cv_df=cv_df, plot_flag=1, status_df=status_df)
     print (df.shape)
+    print (np.all(df.columns == meta_data_df_plis_filtered.columns))
     count = np.isinf(df).values.sum() 
     print("It contains " + str(count) + " infinite values") 
     print ('#nan values', df.isnull().sum().sum())
@@ -100,14 +106,14 @@ def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered,
         plt.figure()
         ax = sns.heatmap(mpg_pca_df.corr(method='pearson'))
         plt.title('correlation pre_linkage_f')
-        plt.savefig(folder + str(cell_class) + '_mpg_pca_corr_pre_linkage_f')
+        plt.savefig(folder + str(cell_class) + '_mpg_pca_corr_pre_linkage_f_ft42.pdf')
         plt.show()
 
         mpg_pca_pl_df = mpg_pca_df.reindex(columns = linkage_cluster_order_og)
         plt.figure()
         ax = sns.heatmap(mpg_pca_pl_df.corr(method='pearson'), yticklabels=True, xticklabels=True)
         plt.title('correlation post linkage_f')
-        plt.savefig(folder + str(cell_class) + '_mpg_pca_corr_post_linkage_f')
+        plt.savefig(folder + str(cell_class) + '_mpg_pca_corr_post_linkage_f_ft42.pdf', transparent = True)
         plt.show()
 
         #intracluster sort

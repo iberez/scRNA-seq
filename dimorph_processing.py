@@ -36,9 +36,12 @@ from scipy.cluster.hierarchy import dendrogram, linkage, optimal_leaf_ordering, 
 #import harmonypy as hm
 from matplotlib.cm import ScalarMappable
 from datetime import date
+import matplotlib as mpl
 #import mpld3
 
 today = str(date.today())
+mpl.rcParams['pdf.fonttype'] = 42
+mpl.rcParams['ps.fonttype'] = 42
 
 def create_meta_data_df(meta_data, df):
     ''' creates a new meta data df with dim (# meta data features, e.g. serial number, x # cells from big data dataframe)'''
@@ -644,6 +647,7 @@ def inter_cluster_sort(df, meta_data_df, unique_labels, n_components, linkage_al
     fig = plt.figure()
     plt.title('Optimal Leaf Ordered Linkage: ' + linkage_alg + '_' + dist_metric)
     dn = dendrogram(Z_ordered)
+    plt.savefig('/bigdata/isaac/' + 'dd_'+today + '.pdf',transparent = True)
     plt.show()
     #build new df using linkage order
     df_post_linkage = pd.DataFrame(index = df.index, columns = [])
@@ -1462,12 +1466,12 @@ def filter_heatmap_elements(folder, cell_class, clusters_to_drop,df_marker_log_a
     meta_data_df_plis_filtered = meta_data_df_plis.copy()
     #print ('before mask', np.unique(meta_data_df_plis_filtered.loc['cluster_label']))
     #mask = meta_data_df_plis_filtered.loc['cluster_label'].apply(lambda x: x not in clusters_to_drop)
-    print (df_marker_log_and_std_filtered.columns == meta_data_df_plis_filtered.columns)
+    print (np.all(df_marker_log_and_std_filtered.columns == meta_data_df_plis_filtered.columns))
     mask = meta_data_df_plis_filtered.loc['cluster_label'].apply(lambda x: x in linkage_cluster_order_filtered_tmp)
     meta_data_df_plis_filtered = meta_data_df_plis_filtered.loc[:,mask]
     #print ('after mask', np.unique(meta_data_df_plis_filtered.loc['cluster_label']))
     df_marker_log_and_std_filtered = df_marker_log_and_std_filtered.loc[:,mask]
-    print (df_marker_log_and_std_filtered.columns == meta_data_df_plis_filtered.columns)
+    print (np.all(df_marker_log_and_std_filtered.columns == meta_data_df_plis_filtered.columns))
     df_post_linkage_intra_sorted_filtered = df_post_linkage_intra_sorted.loc[:,mask]
     change_indices_filtered = get_heatmap_cluster_borders(meta_data_df_plis_filtered)
     print ('change_indices_filtered', change_indices_filtered)
@@ -1589,18 +1593,21 @@ def plot_genes_in_cluster(df,meta_data_df,gene_list, c_label = None,ls=False):
     tmp.T.plot(kind = 'line', xticks = [])
     plt.show()
 
-def plot_rc_tsne(meta_data_plis_filtered_markers,arr_tsne_f, cell_class, folder, savefig = False):
+def plot_rc_tsne(meta_data_plis_filtered_markers,arr_tsne_f, cell_class, folder, m_2_c_dict = None, savefig = False):
     df_tsne_f = pd.DataFrame(index = meta_data_plis_filtered_markers.columns, data=arr_tsne_f, columns=['tsne-1','tsne-2'])
     df_tsne_f.insert(2,'markers', meta_data_plis_filtered_markers.loc['markers',:])
     # Group by 'markers' and calculate the centroid for each group
     centroids = df_tsne_f.groupby('markers')[['tsne-1', 'tsne-2']].mean()
 
     # Plotting the points
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 10))
     #plt.scatter(df_tsne_f['tsne-1'], df_tsne_f['tsne-2'], c='blue', label='Points', alpha=0.5)
     for n, grp in df_tsne_f.groupby('markers'):
-        plt.scatter(x = 'tsne-1',y = 'tsne-2', data=grp, label=n, s = 1)
-
+        #print (n)
+        if m_2_c_dict != None:
+            plt.scatter(x = 'tsne-1',y = 'tsne-2', data=grp, label=n, s = 1, c = '#' + m_2_c_dict[str(n)])
+        else:
+            plt.scatter(x = 'tsne-1',y = 'tsne-2', data=grp, label=n, s = 1)
     # Plotting the centroids with labels
     for marker, (x, y) in centroids.iterrows():
         plt.text(x, y, marker, fontsize=10, ha='center', va='center', 
@@ -1610,11 +1617,12 @@ def plot_rc_tsne(meta_data_plis_filtered_markers,arr_tsne_f, cell_class, folder,
     plt.xlabel('tsne-1')
     plt.ylabel('tsne-2')
     plt.title(cell_class + ' filtered tsne (recalc)')
+    plt.axis('off')
     #plt.legend(['Data Points'])
     #plt.grid(True)
     if savefig:
-        plt.savefig(folder + 'filtered_tsne_rc'+cell_class+'_'+today+'.pdf')
-        np.save(folder + cell_class + 'arr_tsne_f_' + today + '.npy', arr_tsne_f)
+        plt.savefig(folder + 'filtered_tsne_rc_'+cell_class+'_'+today+'.pdf')
+        np.save(folder + cell_class + '_arr_tsne_f_' + today + '.npy', arr_tsne_f)
     plt.show()
 
 def plot_rc_tsne_marker(meta_data_plis_filtered_markers,arr_tsne_f, df_marker_f, marker_name, cell_class, folder, savefig = False):
@@ -1624,7 +1632,7 @@ def plot_rc_tsne_marker(meta_data_plis_filtered_markers,arr_tsne_f, df_marker_f,
     centroids = df_tsne_f.groupby('markers')[['tsne-1', 'tsne-2']].mean()
 
     # Plotting the points
-    plt.figure(figsize=(10, 6))
+    plt.figure(figsize=(10, 10))
     #plt.scatter(df_tsne_f['tsne-1'], df_tsne_f['tsne-2'], c='blue', label='Points', alpha=0.5)
     #for n, grp in df_tsne_f.groupby('markers'):
         #plt.scatter(x = 'tsne-1',y = 'tsne-2', data=grp, label=n, s = 1)

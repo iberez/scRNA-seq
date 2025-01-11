@@ -222,6 +222,8 @@ def plot_transferred_cell_labels(sd_metadata_df_subset_w_amc, amy_sd_arr_tsne, m
     ax.set_title('sd with amy cell type names and class (cell type majority voting), r = ' + str(distance_threshold))
     ax.legend(markerscale=2 )
 
+    ax.axis('off')
+    ax.set_box_aspect(1)
     if savefig:
         plt.savefig(outputfolder + outputname + '.pdf')
     plt.show()

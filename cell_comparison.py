@@ -3,7 +3,7 @@ import os
 import glob
 import pandas as pd
 import numpy as np
-from pandas_ods_reader import read_ods
+#from pandas_ods_reader import read_ods
 from copy import deepcopy
 import pprint
 import json

@@ -36,7 +36,7 @@ import csv
 import matplotlib as mpl
 today = str(date.today())
 
-def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered, cluster_indices_filtered, folder, cell_class, sort=False, write_to_file = False):
+def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered, folder, cell_class, sort=False, write_to_file = False):
     '''uses plis_filtered metadata to reshuffle df_ge, then re process thru standard pipe except skip clustering'''
     #change matplotlib font type to make compatibile with illustrator
     mpl.rcParams['pdf.fonttype'] = 42
@@ -90,6 +90,7 @@ def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered,
     linkage_alg = 'ward'
     dist_metric = 'euclidean'
 
+
     if sort:
         df, meta_data_df_plis_filtered_og, linkage_cluster_order_og, Z_ordered, mpg_pca, linkage_cluster_order_po = dp.inter_cluster_sort(df,
                                                     meta_data_df_plis_filtered, 
@@ -125,7 +126,7 @@ def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered,
         #update labels to make sequential
         meta_data_df_plis_filtered,linkage_cluster_order_filtered = dp.update_metadata_cluster_labels(linkage_cluster_order_og,meta_data_df_plis_filtered_og, mode = 'rc')
     
-    
+
     #run enrichment again
     marker_genes_sorted_f, pos_f, ind_f, ind_s_f, mgs_f = dp.compute_marker_genes(df,
                                                     meta_data_df_plis_filtered,

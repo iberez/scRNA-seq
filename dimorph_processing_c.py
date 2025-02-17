@@ -104,8 +104,9 @@ def process(df_orig, meta_data_df_orig, sex_gene_list, IEG_list, folder, cell_cl
     #for e in range(50,80,5):
         #epsilon, minpts, status_df = dp.compute_eps(minpts = 20, eps_prc=e, arr= arr_tsne, status_df = status_df)
         #labels,n_clusters, arr, status_df = dp.do_dbscan(epsilon = epsilon, minpts = minpts, arr = arr_tsne, status_df = status_df)
-
-    epsilon, minpts, status_df = dp.compute_eps(minpts = 20, eps_prc=65, arr= arr_tsne, status_df = status_df)
+    minpts = 20 #default 20
+    eps_prc = 65 #default 65
+    epsilon, minpts, status_df = dp.compute_eps(minpts = minpts, eps_prc=eps_prc, arr= arr_tsne, status_df = status_df)
     labels,n_clusters, arr, status_df = dp.do_dbscan(epsilon = epsilon, minpts = minpts, arr = arr_tsne, status_df = status_df)
 
     #sort by cluster label
@@ -192,7 +193,7 @@ def process(df_orig, meta_data_df_orig, sex_gene_list, IEG_list, folder, cell_cl
                         folder,
                         fs_waterfall = fsw,
                         savefig = True,
-                        cell_class = str(cell_class)+'_unfiltered_proc')
+                        cell_class = str(cell_class)+'_unfiltered_proc_' +str(eps_prc) + '_' + str(minpts) + '_epsprc_minpts')
     
     print (np.all(df_marker_log_and_std.columns == meta_data_df_plis.columns))
 

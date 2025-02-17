@@ -924,6 +924,7 @@ def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs
             ypos+=int(len(tg[i]))
 
     if savefig:
+        print ('saving heatmap..')
         plt.savefig(folder+'heatmap_' + cell_class + '_' +linkage_alg+'_'+dist_metric+'_' +today+'.jpeg', dpi = 1200)
         #use mpld3 to save interactive plot as html
         #html_str = mpld3.fig_to_html(fig)
@@ -1461,6 +1462,7 @@ def filter_heatmap_elements(folder, cell_class, clusters_to_drop,df_marker_log_a
     #tg_filtered = list(cl_mg_dict.values())
     #tgfs_filtered = get_tgfs_from_tg(tg_filtered)
 
+
     #filtered_index = [item for sublist in tg_filtered for item in sublist]
     df_marker_log_and_std_filtered = df_marker_log_and_std.copy()
     meta_data_df_plis_filtered = meta_data_df_plis.copy()
@@ -1516,6 +1518,57 @@ def filter_heatmap_elements(folder, cell_class, clusters_to_drop,df_marker_log_a
         #meta_data_df_plis_filtered.to_json(folder+file+'.json')
     
     return df_marker_log_and_std_filtered, df_marker_log_and_std_col_filtered, meta_data_df_plis_filtered, pos_filtered_tmp, df_post_linkage_intra_sorted_filtered,linkage_cluster_order_filtered, linkage_cluster_order_filtered_tmp, change_indices_filtered, cluster_indices_filtered  
+
+def merge_heatmap_elements(clusters_to_merge,df_marker_log_and_std,meta_data_df_plis, df_post_linkage_intra_sorted,linkage_cluster_order):
+    #merge clusters
+    
+    if len(clusters_to_merge) == 2:
+        print ('merge')
+        #drop 2nd cluster of lco list
+        linkage_cluster_order_merged_tmp = np.delete(linkage_cluster_order, clusters_to_merge[1]-1)
+        print (linkage_cluster_order_merged_tmp)
+        #set dropped cluster id to id to be merged with
+        meta_data_df_plis.loc['cluster_label',meta_data_df_plis.loc['cluster_label',:]==clusters_to_merge[1]] = clusters_to_merge[0]
+    
+    if len(clusters_to_merge) > 2:
+        print ('merging all')
+        linkage_cluster_order_merged_tmp = np.delete(linkage_cluster_order, [x-1 for x in clusters_to_merge[1:]])
+        for i,v in enumerate(clusters_to_merge[1:]):
+            meta_data_df_plis.loc['cluster_label',meta_data_df_plis.loc['cluster_label',:]==v] = clusters_to_merge[0]   
+
+    df_marker_log_and_std_merged = df_marker_log_and_std.copy()
+    meta_data_df_plis_merged = meta_data_df_plis.copy()
+    #print ('before mask', np.unique(meta_data_df_plis_filtered.loc['cluster_label']))
+    #mask = meta_data_df_plis_filtered.loc['cluster_label'].apply(lambda x: x not in clusters_to_drop)
+    print (np.all(df_marker_log_and_std_merged.columns == meta_data_df_plis_merged.columns))
+    mask = meta_data_df_plis_merged.loc['cluster_label'].apply(lambda x: x in linkage_cluster_order_merged_tmp)
+    meta_data_df_plis_merged = meta_data_df_plis_merged.loc[:,mask]
+    #print ('after mask', np.unique(meta_data_df_plis_filtered.loc['cluster_label']))
+    df_marker_log_and_std_merged = df_marker_log_and_std_merged.loc[:,mask]
+    print (np.all(df_marker_log_and_std_merged.columns == meta_data_df_plis_merged.columns))
+    df_post_linkage_intra_sorted_merged = df_post_linkage_intra_sorted.loc[:,mask]
+    change_indices_merged = get_heatmap_cluster_borders(meta_data_df_plis_merged)
+    print ('change_indices_filtered', change_indices_merged)
+    print (len(change_indices_merged))
+
+    #get updated pos
+    tmp = 0
+    pos_merged_tmp = [] 
+    for i,x in enumerate(change_indices_merged):
+        pos_merged_tmp.append(np.mean(np.arange(tmp,x)))
+        #update pointer
+        tmp=x
+
+    #reindex linkage cluster order, cluster labels
+    meta_data_df_plis_merged, linkage_cluster_order_merged = update_metadata_cluster_labels(linkage_cluster_order_merged_tmp, meta_data_df_plis_merged)
+    #update keys on cl_mg_dict
+    #cl_mg_dict_filtered = dict(zip(linkage_cluster_order_filtered, list(cl_mg_dict.values())))
+    #cl_mg_dict_filtered = {int(k): v for k, v in cl_mg_dict_filtered.items()}
+    df_marker_log_and_std_col_merged = pd.DataFrame(data = df_marker_log_and_std_merged.to_numpy(), 
+                                         index = df_marker_log_and_std_merged.index,
+                                        columns = list(meta_data_df_plis_merged.loc['cluster_label',:]))
+    
+    return meta_data_df_plis_merged, linkage_cluster_order_merged
 
 def compute_fs_waterfall(marker_genes_sorted):
     '''autocomputes optimal fontsize for waterfall gene labeling on heatmap'''

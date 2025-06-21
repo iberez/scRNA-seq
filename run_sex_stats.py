@@ -94,7 +94,6 @@ def run_sex_stats(df,metadata_df,cell_class,run_folder,run_subfolders,delta_fold
     #get full names of clusters, preservering order
     _, idx = np.unique(metadata_df.loc['full_name'], return_index=True)
     fn = np.array(metadata_df.loc['full_name'][np.sort(idx)])
-    fn
 
     #run gene expression differences, generate and save delta plots
     all_counts_df = pd.DataFrame(columns=['N_f_cnts', 'B_f_cnts','N_m_cnts','B_m_cnts'])
@@ -108,6 +107,7 @@ def run_sex_stats(df,metadata_df,cell_class,run_folder,run_subfolders,delta_fold
                                                                 r_mf = np.log2(1.5), 
                                                                 cell_class=cell_class, 
                                                                 folder = delta_folder,
+                                                                gene_filtering=True,
                                                                 normalize = True,
                                                                 n_factor = 20000,          
                                                                 mode = 'delta',
@@ -142,6 +142,7 @@ def run_sex_stats(df,metadata_df,cell_class,run_folder,run_subfolders,delta_fold
                                                             r_mf = np.log2(1.5), 
                                                             cell_class=cell_class, 
                                                             folder = delta_folder,
+                                                            gene_filtering=True,
                                                             normalize = True,
                                                             n_factor = 20000,          
                                                             mode = 'sig_genes',

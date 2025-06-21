@@ -61,7 +61,7 @@ def process(df_orig, meta_data_df_orig, sex_gene_list, IEG_list, folder, cell_cl
     count = np.isinf(df_ge).values.sum() 
     print("It contains " + str(count) + " infinite values") 
     #feature selection
-    cv_df = dp.analyze_cv(df = df_ge,
+    cv_df, df_n = dp.analyze_cv(df = df_ge,
                       norm_scale_factor=20000,
                       num_top_genes=30,
                       plot_flag=1,
@@ -89,24 +89,49 @@ def process(df_orig, meta_data_df_orig, sex_gene_list, IEG_list, folder, cell_cl
     hm_arr = ho.Z_corr.T
 
     perplexity,status_df = dp.get_perplexity(pca_arr = hm_arr, cutoff=500, plot_flag=1, status_df = status_df)
-
-    arr_tsne,status_df = dp.do_tsne(arr = hm_arr, 
-                                n_components=2,
-                                n_iter=1000,
-                                learning_rate=50,
-                                early_exaggeration=12,
-                                init='pca', 
-                                perplexity = perplexity,
-                                status_df = status_df)
+    if cell_class != 'Nonneuronal':
+        arr_tsne,status_df = dp.do_tsne(arr = hm_arr, 
+                                    n_components=2,
+                                    n_iter=1000,
+                                    learning_rate=50,
+                                    early_exaggeration=12,
+                                    init='pca', 
+                                    perplexity = perplexity,
+                                    status_df = status_df)
+    if cell_class == 'Nonneuronal':
+        print ('running TSNE with NN parameters')
+        arr_tsne,status_df = dp.do_tsne(arr = hm_arr, 
+                                    n_components=2,
+                                    n_iter=1000,
+                                    learning_rate=hm_arr.shape[0]//12,
+                                    early_exaggeration=20,
+                                    init='pca', 
+                                    perplexity = perplexity,
+                                    metric = 'correlation',
+                                    status_df = status_df)
     #DBSCAN clustering
     
     #for visualizing how eps effect clustering, uncomment below:
     #for e in range(50,80,5):
         #epsilon, minpts, status_df = dp.compute_eps(minpts = 20, eps_prc=e, arr= arr_tsne, status_df = status_df)
         #labels,n_clusters, arr, status_df = dp.do_dbscan(epsilon = epsilon, minpts = minpts, arr = arr_tsne, status_df = status_df)
-    minpts = 20 #default 20
-    eps_prc = 65 #default 65
-    epsilon, minpts, status_df = dp.compute_eps(minpts = minpts, eps_prc=eps_prc, arr= arr_tsne, status_df = status_df)
+    if cell_class == 'Nonneuronal':
+        minpts = 20
+        epsilon = dp.optimal_eps(arr_tsne, minpts)
+        #eps_prc = 90
+    if cell_class != 'Nonneuronal':
+        minpts = 20 #default 20
+        eps_prc = 65 #default 65
+        epsilon, minpts, status_df = dp.compute_eps(minpts = minpts, eps_prc=eps_prc, arr= arr_tsne, status_df = status_df)
+
+    #epsilon, minpts, status_df = dp.compute_eps(minpts = minpts, eps_prc=eps_prc, arr= arr_tsne, status_df = status_df)
+    #manual tune to get GFAP_astrocytes
+    #epsilon  = epsilon - 0.4
+    #use optimized epsilon
+    #epsilon_2 = dp.optimal_eps(arr_tsne, minpts)
+    #epsilon = np.mean([epsilon_1, epsilon_2])
+    #print ('final epsilon:', epsilon)
+    #epsilon = dp.optimal_eps(arr_tsne, minpts)
     labels,n_clusters, arr, status_df = dp.do_dbscan(epsilon = epsilon, minpts = minpts, arr = arr_tsne, status_df = status_df)
 
     #sort by cluster label
@@ -178,10 +203,7 @@ def process(df_orig, meta_data_df_orig, sex_gene_list, IEG_list, folder, cell_cl
     #sanity check - plotting only filtered df (clusters removed)
     
     fsw = dp.compute_fs_waterfall(marker_genes_sorted)
-    if cell_class == 'Vglut1':
-        fsw = fsw - 0.6
-    if cell_class == 'GABA':
-        fsw = fsw + 1.3
+
     dp.plot_marker_heatmap(df_marker_log_and_std_col, 
                         pos, 
                         linkage_cluster_order, 
@@ -193,8 +215,8 @@ def process(df_orig, meta_data_df_orig, sex_gene_list, IEG_list, folder, cell_cl
                         folder,
                         fs_waterfall = fsw,
                         savefig = True,
-                        cell_class = str(cell_class)+'_unfiltered_proc_' +str(eps_prc) + '_' + str(minpts) + '_epsprc_minpts')
+                        cell_class = str(cell_class)+'_unfiltered_proc_' +str(epsilon) + '_' + str(minpts) + '_epsprc_minpts')
     
     print (np.all(df_marker_log_and_std.columns == meta_data_df_plis.columns))
 
-    return df_marker, arr_tsne, meta_data_df_plis, linkage_cluster_order, df_marker_log_and_std_col, df_plis, cluster_indices, df_marker_log_and_std, df_ge
+    return df_marker, arr_tsne, meta_data_df_plis, linkage_cluster_order, df_marker_log_and_std_col, df_plis, cluster_indices, df_marker_log_and_std, df_ge, df_n

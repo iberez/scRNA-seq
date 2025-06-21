@@ -36,6 +36,7 @@ from holoviews import opts
 import panel as pn
 import bokeh
 from bokeh.resources import INLINE
+from adjustText import adjust_text
 from scipy.stats import mannwhitneyu, false_discovery_control, wilcoxon
 import csv
 import matplotlib as mpl
@@ -50,7 +51,7 @@ def compute_cluster_sex_stats(meta_data_df, prc = False):
     For percentage instead of counts, use prc = True.
     returns results in dataframe'''
     #get lists of unique mice_id, groups, and markers
-    mice_id = np.unique(meta_data_df.loc['ChipID'])
+    #mice_id = np.unique(meta_data_df.loc['ChipID'])
     sample_id = np.unique(meta_data_df.loc['SampleID'])
     groups = np.unique(meta_data_df.loc['Group'])
     fn_list = np.unique(meta_data_df.loc['full_name'])
@@ -91,9 +92,10 @@ def drop_low_representation_cts(cluster_sex_stats_df,df, metadata_df, min_cells 
             if cnt < min_cells:
                 if c not in clusters_2_drop:
                     clusters_2_drop.append(c)
-            if cnt > max_cells:
-                if c not in clusters_2_drop:
-                    clusters_2_drop.append(c)
+            if max_cells!= None:
+                if cnt > max_cells:
+                    if c not in clusters_2_drop:
+                        clusters_2_drop.append(c)
     #update metadata
     metadata_df_updated = metadata_df.loc[:,~metadata_df.loc['full_name'].isin(clusters_2_drop)]
     df_updated = df.reindex(columns = metadata_df_updated.columns)
@@ -134,7 +136,7 @@ def get_optimal_ax_lim(x_ser,y_ser):
     opt_lim = round(np.max(np.abs([min_x,max_x,min_y,max_y])))
     return opt_lim
 
-def compute_group_gene_expression_differences(df, meta_data_df,cluster_fn,threshold_prc_h,threshold_prc_l, r_bn,r_mf, cell_class,folder, normalize = False, n_factor = 20000, mode = 'delta', sig_genes_df = None, savefig = False, write_to_file = False):
+def compute_group_gene_expression_differences(df, meta_data_df,cluster_fn,threshold_prc_h,threshold_prc_l, r_bn,r_mf, cell_class,folder, gene_filtering = True, normalize = True, n_factor = 20000, mode = 'delta', sig_genes_df = None, savefig = False, write_to_file = False):
     '''Inputs
     Parameters
     ----------
@@ -158,45 +160,26 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_fn,thresh
     -------
     expr_mlog_df: dataframe 
         log and meaned expression for each group, genes as rows'''
-    #toggle gene index threshold to determine if thresholding is done on clusters or entire class
-    thresh_in_cluster = False
+
     #marker gene expression within a cluster
-    c_expr = df.loc[:,meta_data_df.loc['full_name']==cluster_fn]
-    #print (c_expr.iloc[:3,:3])
-    #print (c_expr.shape)
-    if thresh_in_cluster:
+    c_expr_raw = df.loc[:,meta_data_df.loc['full_name']==cluster_fn]
+    #print (c_expr_raw.iloc[:3,:3])
+    print (c_expr_raw.shape)
 
-        c_expr_bool = c_expr.mask(c_expr>0, other = 1)
-        gene_sum =  np.array(c_expr_bool.sum(axis=1))
-        #print (gene_sum)
-        #print (gene_sum.shape)
-        gene_sum = np.reshape(gene_sum,(c_expr_bool.shape[0],1))
-        #print (gene_sum.shape)
-        if normalize:
-            c_expr = (c_expr/gene_sum)*n_factor
-        #print (c_expr.iloc[:3,:3])
-        #set lower threshold for genes expressed in < threshold_prc_l% of cells
-        gene_threshold_l = (threshold_prc_l/100)*expr_bool.shape[1]
-        #set upper threshold for removing housekeeping genes:
-        gene_threshold_h = (threshold_prc_h/100)*expr_bool.shape[1]
-        genes_to_keep_ind = []
-        for i,v in enumerate(gene_sum):
-            if gene_threshold_h > v > gene_threshold_l:
-                genes_to_keep_ind.append(i)
-        #update c_expr keeping only genes above threshold
-        c_expr = c_expr.iloc[genes_to_keep_ind,:]
-
-        #print (c_expr.shape)
-
+    expr_bool = c_expr_raw.mask(c_expr_raw>0, other = 1)
+    gene_sum =  np.array(expr_bool.sum(axis=1))
+    gene_sum = np.reshape(gene_sum,(expr_bool.shape[0],1))
     
+    col_sum = np.array(c_expr_raw.sum(axis=0))
+    print (col_sum.shape)
+    col_sum = np.reshape(col_sum,(1,col_sum.shape[0]))
+    print (col_sum.shape)
+    if normalize:
+        c_expr = (c_expr_raw/col_sum)*n_factor
     else:
-        expr = c_expr
-        expr_bool = expr.mask(expr>0, other = 1)
-        gene_sum =  np.array(expr_bool.sum(axis=1))
-        gene_sum = np.reshape(gene_sum,(expr_bool.shape[0],1))
-        #print (gene_sum.shape)
-        if normalize:
-            expr = (expr/gene_sum)*n_factor
+        c_expr = c_expr_raw
+
+    if gene_filtering:
         #set lower threshold for genes expressed in < threshold_prc_l% of cells
         gene_threshold_l = (threshold_prc_l/100)*expr_bool.shape[1]
         #set upper threshold for removing housekeeping genes:
@@ -207,9 +190,9 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_fn,thresh
                 genes_to_keep_ind.append(i)
         #update c_expr keeping only genes above threshold
         c_expr = c_expr.iloc[genes_to_keep_ind,:]
-        #print (gene_sum)
-        #print (c_expr.shape)
-        #print (c_expr.index)
+    #print (gene_sum)
+    print (c_expr.shape)
+    #print (c_expr.index)
 
 
     n_genes = c_expr.shape[0]
@@ -286,6 +269,8 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_fn,thresh
 
     #set text fontsize in plots
     fs = 8
+    #set point size in plots
+    s=1
     #get optimal scale limit and ticks using max abs delta 
     delta_df = pd.concat([delta_B_N_m,delta_B_N_f,delta_m_f_N,delta_m_f_B], axis=1)
     #print ('delta df abs max', np.abs(delta_df.values).max(axis=None))
@@ -298,173 +283,186 @@ def compute_group_gene_expression_differences(df, meta_data_df,cluster_fn,thresh
     c_BN_f = colors[6]
     c_BN_m = colors[0]
     fig,(ax1,ax2) = plt.subplots(1,2, figsize = (10,5), sharey=True)
-    if True in np.array(d_bn_sorted['d_bn']>r_bn):
-        #fig,ax = plt.subplots()
-        ax1.set_title(cell_class + ' Δ Breeder-Naive, Cluster: ' + str(cluster_fn)) 
-        #ax.scatter(delta_B_N_m,delta_B_N_f, s=1)
-        ax1.set_xlabel(f'Δ_B_m({B_m_expr_cnts})_N_m({N_m_expr_cnts})')
-        ax1.set_ylabel(f'Δ_B_f({B_f_expr_cnts})_N_f({N_f_expr_cnts})')
-        ax1.axvline(color = 'grey')
-        ax1.axhline(y=0, color = 'grey')
-        ax1.axline((0, 0), slope=1, color="lightgrey", linestyle='--')
-        # Draw a circle with the specified radius
-        circle = plt.Circle((0, 0), r_bn, color='lightgrey', fill=False, linestyle='--')
-        ax1.add_patch(circle)
-        #opt_lim = get_optimal_ax_lim(delta_B_N_m,delta_B_N_f)
+    #if True in np.array(d_bn_sorted['d_bn']>r_bn):
+    #fig,ax = plt.subplots()
+    ax1.set_title(cell_class + ' Δ Breeder-Naive, Cluster: ' + str(cluster_fn)) 
+    #ax.scatter(delta_B_N_m,delta_B_N_f, s=1)
+    ax1.set_xlabel(f'Δ_B_m({B_m_expr_cnts})_N_m({N_m_expr_cnts})')
+    ax1.set_ylabel(f'Δ_B_f({B_f_expr_cnts})_N_f({N_f_expr_cnts})')
+    ax1.axvline(color = 'grey')
+    ax1.axhline(y=0, color = 'grey')
+    ax1.axline((0, 0), slope=1, color="lightgrey", linestyle='--')
+    # Draw a circle with the specified radius
+    circle = plt.Circle((0, 0), r_bn, color='lightgrey', fill=False, linestyle='--')
+    ax1.add_patch(circle)
+    #opt_lim = get_optimal_ax_lim(delta_B_N_m,delta_B_N_f)
 
-        #if mode == 'delta':
-        #122924_run remove fixed scale
-        ax1.set_xlim([-opt_lim,opt_lim])
-        ax1.set_ylim([-opt_lim,opt_lim])
-        ax1.set_box_aspect(1)
-        # Ensure x-ticks match y-ticks
-        #ticks = ax1.get_yticks()  # Get y-ticks
-        #ax1.set_xticks(ticks)     # Set the same ticks for x-axis
+    #if mode == 'delta':
+    #122924_run remove fixed scale
+    ax1.set_xlim([-opt_lim,opt_lim])
+    ax1.set_ylim([-opt_lim,opt_lim])
+    ax1.set_box_aspect(1)
+    # Ensure x-ticks match y-ticks
+    #ticks = ax1.get_yticks()  # Get y-ticks
+    #ax1.set_xticks(ticks)     # Set the same ticks for x-axis
 
-        #ax.text(-.25*s_factor, 0.15*s_factor, 'thresh_l_h = '+str(threshold_prc_l) + '|' + str(threshold_prc_h) + '%', fontsize = fs)
-        #ax.text(-.25*s_factor, 0.05*s_factor, 'r_bn = '+str(r_bn), fontsize = fs)
-        #ax.text(-.25*s_factor, -.05*s_factor, 'n_genes = '+str(n_genes), fontsize = fs)
-        #ax.text(-.25*s_factor, -.15*s_factor, 'n_cells = '+str(n_cells), fontsize = fs)
+    #ax.text(-.25*s_factor, 0.15*s_factor, 'thresh_l_h = '+str(threshold_prc_l) + '|' + str(threshold_prc_h) + '%', fontsize = fs)
+    #ax.text(-.25*s_factor, 0.05*s_factor, 'r_bn = '+str(r_bn), fontsize = fs)
+    #ax.text(-.25*s_factor, -.05*s_factor, 'n_genes = '+str(n_genes), fontsize = fs)
+    #ax.text(-.25*s_factor, -.15*s_factor, 'n_cells = '+str(n_cells), fontsize = fs)
 
-        TEXTS = []
-        #plot and label points outside of circle radius
-        for i, txt in enumerate(list(delta_B_N_m.index)):
-            if d_bn.iloc[i] > r_bn: 
-                #ax.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c='blue', marker = "X")       
-                #ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs, c = 'blue')
-                #switch labeling depending if sig genes is passed
-                if mode == 'sig_genes':
-                    #print ('sig gene detected')
-                    #print (txt)
-                    if txt in ΔBN_m_sig_genes and txt not in ΔBN_f_sig_genes:
-                        ax1.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c=c_BN_m, marker="*", label = 'ΔBN_m_sig_genes')
-                        ax1.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs, c = c_BN_m)
-                    if txt in ΔBN_f_sig_genes and txt not in ΔBN_m_sig_genes: 
-                        ax1.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c=c_BN_f, marker="o", label = 'ΔBN_f_sig_genes')
-                        ax1.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs, c = c_BN_f)    
-                    #only show sig genes for both axes to clean up plot/show overlap
-                    if txt in ΔBN_m_sig_genes and txt in ΔBN_f_sig_genes:
-                        ax1.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c='orange', marker="^", label = "ΔBN_sig_genes")
-                        ax1.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs, c = 'orange')
-                #conditional labeling if gene is far out
-                if mode == 'delta':
-                    if txt in list(far_out_genes_bn):
-                        ax1.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs)
-                #if txt.startswith('S'):
-                #labeling using adjust text to repelling algo
-                #TEXTS.append(ax.text(delta_B_N_m.iloc[i], delta_B_N_f.iloc[i],txt, fontsize = 7))
-                    #TEXTS.append(ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = 7))   
-        #avoid label overlap algo
-        '''
+    TEXTS = []
+    #plot and label points outside of circle radius
+    for i, txt in enumerate(list(delta_B_N_m.index)):
+        if d_bn.iloc[i] > r_bn: 
+            #ax.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=1, c='blue', marker = "X")       
+            #ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = fs, c = 'blue')
+            #switch labeling depending if sig genes is passed
+            if mode == 'sig_genes':
+                #print ('sig gene detected')
+                #print (txt)
+                if txt in ΔBN_m_sig_genes and txt not in ΔBN_f_sig_genes:
+                    ax1.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=s, c=c_BN_m, marker="*", label = 'ΔBN_m_sig_genes')
+                    t = ax1.text(delta_B_N_m.iloc[i], delta_B_N_f.iloc[i],txt,ha='center', va='center',fontsize = fs, c = c_BN_m)
+                    TEXTS.append(t)
+                if txt in ΔBN_f_sig_genes and txt not in ΔBN_m_sig_genes: 
+                    ax1.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=s, c=c_BN_f, marker="o", label = 'ΔBN_f_sig_genes')
+                    t = ax1.text(delta_B_N_m.iloc[i], delta_B_N_f.iloc[i],txt,ha='center', va='center',fontsize = fs, c = c_BN_f)
+                    TEXTS.append(t)    
+                #only show sig genes for both axes to clean up plot/show overlap
+                if txt in ΔBN_m_sig_genes and txt in ΔBN_f_sig_genes:
+                    ax1.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=s, c='orange', marker="^", label = "ΔBN_sig_genes")
+                    t = ax1.text(delta_B_N_m.iloc[i], delta_B_N_f.iloc[i], txt, ha='center', va='center',fontsize = fs, c = 'orange')
+                    TEXTS.append(t)
+            #conditional labeling if gene is far out
+            if mode == 'delta':
+                if txt in list(far_out_genes_bn):
+                    t = ax1.text(delta_B_N_m.iloc[i], delta_B_N_f.iloc[i],txt,fontsize = fs)
+                    TEXTS.append(t)
+                ax1.scatter(delta_B_N_m.iloc[i],delta_B_N_f.iloc[i], s=s)
+            #if txt.startswith('S'):
+            #labeling using adjust text to repelling algo
+            #TEXTS.append(ax.text(delta_B_N_m.iloc[i], delta_B_N_f.iloc[i],txt, fontsize = 7))
+                #TEXTS.append(ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = 7))   
+    #avoid label overlap algo
+    if mode == 'delta':
         adjust_text(
-            TEXTS, 
-            expand=(2, 2),
-            force_explode= (2,2),
-            expand_axes=True,
-            arrowprops=dict(
-                arrowstyle="->",  
-                lw=.2
-            ),
-            ax=fig.axes[0])
-        '''
-        if mode == 'sig_genes':
-            handles, labels = ax1.get_legend_handles_labels()
-            by_label = dict(zip(labels, handles))
-            ax1.legend(by_label.values(), by_label.keys(), markerscale=2)
-        #ax.legend()
-        #if mode == 'delta':
-            #if savefig:
-                #plt.savefig(folder + 'plots/' + cell_class + '_Gene_Delta_Plot_Breeder-Naive_c_' + cluster_fn + '.pdf')
-        #if mode == 'sig_genes':
-            #if savefig:
-                #plt.savefig(folder + 'sig_plots/' + cell_class + '_Gene_Delta_Plot_Breeder-Naive_c_' + cluster_fn + '.pdf')
-        plt.show()
+        TEXTS, 
+        ax=ax1,
+        arrowprops=dict(arrowstyle="-", color='gray', alpha=0.5),
+        avoid_self=False,
+        min_arrow_len=1)
+
+    if mode == 'sig_genes':
+        handles, labels = ax1.get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        ax1.legend(by_label.values(), by_label.keys(), markerscale=2)
+
+        adjust_text(
+        TEXTS, 
+        ax=ax1,
+        arrowprops=dict(arrowstyle="-", color='gray', alpha=0.5),
+        min_arrow_len=1)
+    #ax.legend()
+    #if mode == 'delta':
+        #if savefig:
+            #plt.savefig(folder + 'plots/' + cell_class + '_Gene_Delta_Plot_Breeder-Naive_c_' + cluster_fn + '.pdf')
+    #if mode == 'sig_genes':
+        #if savefig:
+            #plt.savefig(folder + 'sig_plots/' + cell_class + '_Gene_Delta_Plot_Breeder-Naive_c_' + cluster_fn + '.pdf')
+    #plt.show()
 
     #plot/savefig only when some gene is outside radius
-    if True in np.array(d_mf_sorted['d_mf']>r_mf):
-        #plot first 10
-        #fig,ax = plt.subplots()
-        ax2.set_title(cell_class + ' Δ Male-Female, Cluster: '+ str(cluster_fn))
-        #ax.scatter(delta_m_f_N,delta_m_f_B, s=1)
-        ax2.axvline(color = 'grey')
-        ax2.axhline(y=0, color = 'grey')
-        ax2.axline((0, 0), slope=1, color="lightgrey", linestyle='--')
-        ax2.set_xlabel(f'Δ_m_N({N_m_expr_cnts})_f_N({N_f_expr_cnts})')
-        ax2.set_ylabel(f'Δ_m_B({B_m_expr_cnts})_f_B({B_f_expr_cnts})')
-        # Draw a circle with the specified radius
-        circle = plt.Circle((0, 0), r_mf, color='lightgrey', fill=False, linestyle='--')
-        ax2.add_patch(circle)
-        
-        #opt_lim = get_optimal_ax_lim(delta_m_f_N,delta_m_f_B)
-        #get_optimal_ax_lim seems to be buggy, use fixed lim
-        #print (opt_lim)
-        #if mode == 'delta':
-        
-        ax2.set_xlim([-opt_lim,opt_lim])
-        ax2.set_ylim([-opt_lim,opt_lim])
-        ax2.set_box_aspect(1)
-        # Ensure x-ticks match y-ticks
-        #ticks = ax2.get_yticks()  # Get y-ticks
-        #ax2.set_xticks(ticks)     # Set the same ticks for x-axis
+    #if True in np.array(d_mf_sorted['d_mf']>r_mf):
+    #plot first 10
+    #fig,ax = plt.subplots()
+    ax2.set_title(cell_class + ' Δ Male-Female, Cluster: '+ str(cluster_fn))
+    #ax.scatter(delta_m_f_N,delta_m_f_B, s=1)
+    ax2.axvline(color = 'grey')
+    ax2.axhline(y=0, color = 'grey')
+    ax2.axline((0, 0), slope=1, color="lightgrey", linestyle='--')
+    ax2.set_xlabel(f'Δ_m_N({N_m_expr_cnts})_f_N({N_f_expr_cnts})')
+    ax2.set_ylabel(f'Δ_m_B({B_m_expr_cnts})_f_B({B_f_expr_cnts})')
+    # Draw a circle with the specified radius
+    circle = plt.Circle((0, 0), r_mf, color='lightgrey', fill=False, linestyle='--')
+    ax2.add_patch(circle)
+    
+    #opt_lim = get_optimal_ax_lim(delta_m_f_N,delta_m_f_B)
+    #get_optimal_ax_lim seems to be buggy, use fixed lim
+    #print (opt_lim)
+    #if mode == 'delta':
+    
+    ax2.set_xlim([-opt_lim,opt_lim])
+    ax2.set_ylim([-opt_lim,opt_lim])
+    ax2.set_box_aspect(1)
+    # Ensure x-ticks match y-ticks
+    #ticks = ax2.get_yticks()  # Get y-ticks
+    #ax2.set_xticks(ticks)     # Set the same ticks for x-axis
 
-        #ax.text(-.25*s_factor, .15*s_factor, 'thresh_l_h = '+str(threshold_prc_l) + '|' + str(threshold_prc_h) + '%',fontsize = fs)
-        #ax.text(-.25*s_factor, 0.05*s_factor, 'r_mf = '+str(r_mf), fontsize = fs)
-        #ax.text(-.25*s_factor, -0.05*s_factor, 'n_genes = '+str(n_genes),fontsize = fs)
-        #ax.text(-.25*s_factor, -.15*s_factor, 'n_cells = '+str(n_cells), fontsize = fs)
-        
-        for i, txt in enumerate(list(delta_B_N_m.index)):
-            if d_mf.iloc[i] > r_mf:
-                #ax.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=1, marker = "X", c = 'blue')
-                #ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs, c = 'blue')
-                # switch labeling depending if sig genes is passed
-                if mode == 'sig_genes':
-                    #print ('sig gene detected')
-                    #print (txt)
-                    if txt in Δmf_B_sig_genes and txt not in Δmf_N_sig_genes:
-                        ax2.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=1, c=c_mf_B, marker="o", label = "Δmf_B_sig_genes")
-                        ax2.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs, c = c_mf_B)
-                    if txt in Δmf_N_sig_genes and txt not in Δmf_B_sig_genes:
-                        ax2.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=1, c=c_mf_N, marker="*", label = "Δmf_N_sig_genes")
-                        ax2.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs, c = c_mf_N)
-                    #only show sig genes for both axes to clean up plot/show overlap
-                    if txt in Δmf_B_sig_genes and txt in Δmf_N_sig_genes:
-                        ax2.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=1, c='orange', marker="^", label = "Δmf_sig_genes")
-                        ax2.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs, c = 'orange')
+    #ax.text(-.25*s_factor, .15*s_factor, 'thresh_l_h = '+str(threshold_prc_l) + '|' + str(threshold_prc_h) + '%',fontsize = fs)
+    #ax.text(-.25*s_factor, 0.05*s_factor, 'r_mf = '+str(r_mf), fontsize = fs)
+    #ax.text(-.25*s_factor, -0.05*s_factor, 'n_genes = '+str(n_genes),fontsize = fs)
+    #ax.text(-.25*s_factor, -.15*s_factor, 'n_cells = '+str(n_cells), fontsize = fs)
+    TEXTS = []
 
-                #conditional labeling if gene is far out
-                if mode == 'delta':
-                    if txt in list(far_out_genes_mf):
-                        ax2.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs)
-                #labeling using adjust text to repelling algo
-                #TEXTS.append(ax.text(delta_B_N_m.iloc[i], delta_B_N_f.iloc[i],txt, fontsize = 7))
-                    #TEXTS.append(ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = 7))   
-        #avoid label overlap algo
-        '''
+    for i, txt in enumerate(list(delta_B_N_m.index)):
+        if d_mf.iloc[i] > r_mf:
+            #ax.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=1, marker = "X", c = 'blue')
+            #ax.annotate(txt, (delta_m_f_N.iloc[i], delta_m_f_B.iloc[i]),fontsize = fs, c = 'blue')
+            # switch labeling depending if sig genes is passed
+            if mode == 'sig_genes':
+                #print ('sig gene detected')
+                #print (txt)
+                if txt in Δmf_B_sig_genes and txt not in Δmf_N_sig_genes:
+                    ax2.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=s, c=c_mf_B, marker="o", label = "Δmf_B_sig_genes")
+                    t = ax2.text(delta_m_f_N.iloc[i], delta_m_f_B.iloc[i],txt, ha='center', va='center',fontsize = fs, c = c_mf_B)
+                    TEXTS.append(t)  
+                if txt in Δmf_N_sig_genes and txt not in Δmf_B_sig_genes:
+                    ax2.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=s, c=c_mf_N, marker="*", label = "Δmf_N_sig_genes")
+                    t = ax2.text(delta_m_f_N.iloc[i], delta_m_f_B.iloc[i],txt, ha='center', va='center',fontsize = fs, c = c_mf_N)
+                    TEXTS.append(t)  
+                #only show sig genes for both axes to clean up plot/show overlap
+                if txt in Δmf_B_sig_genes and txt in Δmf_N_sig_genes:
+                    ax2.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=s, c='orange', marker="^", label = "Δmf_sig_genes")
+                    t = ax2.text(delta_m_f_N.iloc[i], delta_m_f_B.iloc[i],txt, ha='center', va='center',fontsize = fs, c = 'orange')
+                    TEXTS.append(t)  
+            #conditional labeling if gene is far out
+            if mode == 'delta':
+                if txt in list(far_out_genes_mf):
+                    t = ax2.text(delta_m_f_N.iloc[i], delta_m_f_B.iloc[i],txt,fontsize = fs)
+                    TEXTS.append(t)  
+                ax2.scatter(delta_m_f_N.iloc[i],delta_m_f_B.iloc[i], s=s)
+            #labeling using adjust text to repelling algo
+            #TEXTS.append(ax.text(delta_B_N_m.iloc[i], delta_B_N_f.iloc[i],txt, fontsize = 7))
+                #TEXTS.append(ax.annotate(txt, (delta_B_N_m.iloc[i], delta_B_N_f.iloc[i]),fontsize = 7))   
+    #avoid label overlap algo
+    if mode == 'delta':
         adjust_text(
-            TEXTS, 
-            expand=(1, 1),
-            force_explode= (1,1),
-            expand_axes=True,
-            arrowprops=dict(
-                arrowstyle="->",  
-                lw=.2
-            ),
-            ax=fig.axes[0])    
-        '''
-        if mode == 'sig_genes':
-            handles, labels = ax2.get_legend_handles_labels()
-            by_label = dict(zip(labels, handles))
-            ax2.legend(by_label.values(), by_label.keys(), markerscale=2)
-        plt.tight_layout()
-        if mode == 'delta':
-            if savefig:
-                plt.savefig(folder + 'plots/' + cell_class + '_Gene_Delta_Plot_combined_c_' + cluster_fn + '.pdf')
-        if mode == 'sig_genes':
-            if savefig:
-                plt.savefig(folder + 'sig_plots/' + cell_class + '_Gene_Delta_Plot_combined_c' + cluster_fn + '.pdf')
-        
-        
-        plt.show()
+        TEXTS, 
+        ax=ax2,
+        arrowprops=dict(arrowstyle="-", color='gray', alpha=0.5),
+        avoid_self=False,
+        min_arrow_len=1)
+
+    if mode == 'sig_genes':
+        handles, labels = ax2.get_legend_handles_labels()
+        by_label = dict(zip(labels, handles))
+        ax2.legend(by_label.values(), by_label.keys(), markerscale=2)
+
+        adjust_text(
+        TEXTS, 
+        ax=ax2,
+        arrowprops=dict(arrowstyle="-", color='gray', alpha=0.5),
+        min_arrow_len=1)
+    plt.tight_layout()
+    if mode == 'delta':
+        if savefig:
+            plt.savefig(folder + 'plots/' + cell_class + '_Gene_Delta_Plot_combined_c_' + cluster_fn + '.pdf')
+    if mode == 'sig_genes':
+        if savefig:
+            plt.savefig(folder + 'sig_plots/' + cell_class + '_Gene_Delta_Plot_combined_c' + cluster_fn + '.pdf')
+    plt.show()
+    plt.close()
     if mode == 'delta':
         if write_to_file:
             #write updated metadata to file
@@ -570,6 +568,7 @@ def volcano_plot(U_test_df,delta_df, cell_class, cluster_fn, all_counts_df, test
     ax.set_ylabel('-log10(p_adj)')
     #add gene label if beyond alpha and log_fc<-1 or >1
     #also make note of index - append to text file
+    TEXTS = []
     for i, txt in enumerate(list(v_df.index)):
         #write out stat values for all genes
         csv_row = [[cluster_fn,test_name,txt,v_df.loc[txt,'delta'], v_df.loc[txt,'p_adj']]]
@@ -582,7 +581,8 @@ def volcano_plot(U_test_df,delta_df, cell_class, cluster_fn, all_counts_df, test
         if v_df.loc[txt, '-log10(p_adj)'] > -np.log10(alpha):
             if v_df.loc[txt, 'delta'] > np.log2(log_fc) or v_df.loc[txt, 'delta'] < -np.log2(log_fc):
                 #standard labeling
-                ax.annotate(txt, (v_df.loc[txt,'delta'], v_df.loc[txt,'-log10(p_adj)']),fontsize = 10)
+                t = ax.text(v_df.loc[txt,'delta'], v_df.loc[txt,'-log10(p_adj)'],txt, fontsize = 10)
+                TEXTS.append(t)
                 #with open(output_folder + "sig_gene_index_list.txt", "a") as myfile:
                     #myfile.write(str(test_name)+'_'+str(index) + '\n')
                 #write index, test namem and genes as row into csv
@@ -595,13 +595,20 @@ def volcano_plot(U_test_df,delta_df, cell_class, cluster_fn, all_counts_df, test
                     write = csv.writer(file)
                     write.writerows(csv_row)
 
+    #avoid label overlap algo
+    adjust_text(
+        TEXTS, 
+        ax=ax,
+        arrowprops=dict(arrowstyle='->', color='red'))
 
     plt.grid(True)
-    plt.show()
+
 
     if savefig:
+        #print ('saving fig', output_folder + 'plots/' + cell_class + '_volcano_plot_' + test_name +'_c_' + cluster_fn + '.pdf')
         plt.savefig(output_folder + 'plots/' + cell_class + '_volcano_plot_' + test_name +'_c_' + cluster_fn + '.pdf')
-    
+    plt.show()
+    plt.close()
     return v_df
 
 def run_volcano_analysis(delta_data_folder, utest_data_folder,output_folder, cluster_fn , cell_class, all_counts_df, savefig = 'False', write_to_file = False):
@@ -628,10 +635,10 @@ def run_volcano_analysis(delta_data_folder, utest_data_folder,output_folder, clu
     delta_m_f_N = expr_mlog_df['N_m'] - expr_mlog_df['N_f']
     delta_m_f_B = expr_mlog_df['B_m'] - expr_mlog_df['B_f']
     
-    v_BN_m_df = volcano_plot(U_test_BN_m,delta_B_N_m,'GABA', cluster_fn, all_counts_df.loc[cluster_fn,['B_m_cnts','N_m_cnts']], 'ΔBN_m',output_folder, savefig)
-    v_BN_f_df = volcano_plot(U_test_BN_f,delta_B_N_f,'GABA', cluster_fn, all_counts_df.loc[cluster_fn,['B_f_cnts','N_f_cnts']], 'ΔBN_f',output_folder, savefig)
-    v_mf_B_df = volcano_plot(U_test_mf_B,delta_m_f_B,'GABA', cluster_fn, all_counts_df.loc[cluster_fn,['B_m_cnts','B_f_cnts']], 'Δmf_B',output_folder, savefig)
-    v_mf_N_df = volcano_plot(U_test_mf_N,delta_m_f_N,'GABA', cluster_fn, all_counts_df.loc[cluster_fn,['N_m_cnts','N_f_cnts']], 'Δmf_N',output_folder, savefig)
+    v_BN_m_df = volcano_plot(U_test_BN_m,delta_B_N_m,cell_class, cluster_fn, all_counts_df.loc[cluster_fn,['B_m_cnts','N_m_cnts']], 'ΔBN_m',output_folder, savefig)
+    v_BN_f_df = volcano_plot(U_test_BN_f,delta_B_N_f,cell_class, cluster_fn, all_counts_df.loc[cluster_fn,['B_f_cnts','N_f_cnts']], 'ΔBN_f',output_folder, savefig)
+    v_mf_B_df = volcano_plot(U_test_mf_B,delta_m_f_B,cell_class, cluster_fn, all_counts_df.loc[cluster_fn,['B_m_cnts','B_f_cnts']], 'Δmf_B',output_folder, savefig)
+    v_mf_N_df = volcano_plot(U_test_mf_N,delta_m_f_N,cell_class, cluster_fn, all_counts_df.loc[cluster_fn,['N_m_cnts','N_f_cnts']], 'Δmf_N',output_folder, savefig)
     
     if write_to_file:
         v_BN_m_df.to_json(output_folder + 'data/' + cell_class + '_v_BN_m_df_c_' + cluster_fn+'.json')

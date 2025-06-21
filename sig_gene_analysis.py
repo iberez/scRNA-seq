@@ -267,6 +267,15 @@ def plot_sig_gene_heatmap_sct(sig_deltas,
 def linkage_sort_sig_genes(cluster_fn, sig_deltas_sorted,mask_sorted, subset, output_folder, output_filename, linkage_alg = 'ward', dist_metric = 'euclidean', savefig = False):
     '''sort sig genes using linkage'''
     sig_deltas_subset = sig_deltas_sorted[:subset]
+    #save sig gene list to file
+    gene_list_fn = output_folder + cluster_fn + '_gene_list.txt'
+    gene_list = list(sig_deltas_subset.index)
+    gene_list = [s.upper() for s in gene_list]
+    # Write the list to a text file
+    with open(gene_list_fn, 'w') as file:
+        for item in gene_list:
+            file.write(f"{item}\n")
+        print ('wrote gene list to: ', gene_list_fn)
     mask_subset = mask_sorted[:subset]
     D_cond = pdist(np.array(sig_deltas_subset), metric=dist_metric)
     Z = linkage(np.array(sig_deltas_subset), linkage_alg, metric= dist_metric)
@@ -283,3 +292,113 @@ def linkage_sort_sig_genes(cluster_fn, sig_deltas_sorted,mask_sorted, subset, ou
     sig_deltas_subset_linkage = sig_deltas_subset.reindex(linkage_index)
     mask_subset_linkage = mask_subset.reindex(linkage_index)
     return sig_deltas_subset_linkage, mask_subset_linkage
+
+def get_sig_gene_lists(ct, genes, sex_stats_folder, mode = 'sig_genes'):
+    if mode == 'sig_genes':
+        tmp = genes.loc[genes.loc[:,'cluster_fn'] == ct,:]
+        tmp = tmp.set_index('gene')
+        m_genes = list(set(tmp.iloc[np.where((tmp.loc[:,'test'] == 'Δmf_B') & (tmp.loc[:,'delta'] > 0))[0],:].index.to_list() + tmp.iloc[np.where((tmp.loc[:,'test'] == 'Δmf_N') & (tmp.loc[:,'delta'] > 0))[0],:].index.to_list()))
+        f_genes = list(set(tmp.iloc[np.where((tmp.loc[:,'test'] == 'Δmf_B') & (tmp.loc[:,'delta'] < 0))[0],:].index.to_list() + tmp.iloc[np.where((tmp.loc[:,'test'] == 'Δmf_N') & (tmp.loc[:,'delta'] < 0))[0],:].index.to_list()))
+        b_genes = list(set(tmp.iloc[np.where((tmp.loc[:,'test'] == 'ΔBN_f') & (tmp.loc[:,'delta'] > 0))[0],:].index.to_list() + tmp.iloc[np.where((tmp.loc[:,'test'] == 'ΔBN_m') & (tmp.loc[:,'delta'] > 0))[0],:].index.to_list()))
+        n_genes = list(set(tmp.iloc[np.where((tmp.loc[:,'test'] == 'ΔBN_f') & (tmp.loc[:,'delta'] < 0))[0],:].index.to_list() + tmp.iloc[np.where((tmp.loc[:,'test'] == 'ΔBN_m') & (tmp.loc[:,'delta'] < 0))[0],:].index.to_list()))
+        outfolder = sex_stats_folder + 'sig_gene_lists/'
+        os.makedirs(outfolder, exist_ok=True) 
+        with open(outfolder + ct + '_m_genes.txt', 'w') as f:
+            for item in m_genes:
+                f.write(f"{item}\n")
+        with open(outfolder + ct + '_f_genes.txt', 'w') as f:
+            for item in f_genes:
+                f.write(f"{item}\n")
+        with open(outfolder + ct + '_b_genes.txt', 'w') as f:
+            for item in b_genes:
+                f.write(f"{item}\n")
+        with open(outfolder + ct + '_n_genes.txt', 'w') as f:
+            for item in n_genes:
+                f.write(f"{item}\n")
+    if mode == 'all_genes':
+        tmp = genes.loc[genes.loc[:,'cluster_fn'] == ct,:]
+        tmp = tmp.set_index('gene')
+        m_genes = tmp.iloc[np.where((tmp.loc[:,'test'] == 'Δmf_B') & (tmp.loc[:,'delta'] > 0))[0],:].sort_values(by = 'delta', ascending = False).index.to_list() + tmp.iloc[np.where((tmp.loc[:,'test'] == 'Δmf_N') & (tmp.loc[:,'delta'] > 0))[0],:].sort_values(by = 'delta', ascending = False).index.to_list()
+        f_genes = tmp.iloc[np.where((tmp.loc[:,'test'] == 'Δmf_B') & (tmp.loc[:,'delta'] < 0))[0],:].sort_values(by = 'delta', ascending = True).index.to_list() + tmp.iloc[np.where((tmp.loc[:,'test'] == 'Δmf_N') & (tmp.loc[:,'delta'] < 0))[0],:].sort_values(by = 'delta', ascending = True).index.to_list()
+        b_genes = tmp.iloc[np.where((tmp.loc[:,'test'] == 'ΔBN_f') & (tmp.loc[:,'delta'] > 0))[0],:].sort_values(by = 'delta', ascending = False).index.to_list() + tmp.iloc[np.where((tmp.loc[:,'test'] == 'ΔBN_m') & (tmp.loc[:,'delta'] > 0))[0],:].sort_values(by = 'delta', ascending = False).index.to_list()
+        n_genes = tmp.iloc[np.where((tmp.loc[:,'test'] == 'ΔBN_f') & (tmp.loc[:,'delta'] < 0))[0],:].sort_values(by = 'delta', ascending = True).index.to_list() + tmp.iloc[np.where((tmp.loc[:,'test'] == 'ΔBN_m') & (tmp.loc[:,'delta'] < 0))[0],:].sort_values(by = 'delta', ascending = True).index.to_list()
+        #get top 100
+        if len(m_genes) > 100:
+            m_genes = m_genes[:100]
+        if len(f_genes) > 100:
+            f_genes = f_genes[:100]
+        if len(b_genes) > 100:
+            b_genes = b_genes[:100]
+        if len(n_genes) > 100:
+            n_genes = n_genes[:100]
+        outfolder = sex_stats_folder + 'all_gene_lists/'
+        os.makedirs(outfolder, exist_ok=True) 
+        with open(outfolder + ct + '_m_genes.txt', 'w') as f:
+            for item in m_genes:
+                f.write(f"{item}\n")
+        with open(outfolder + ct + '_f_genes.txt', 'w') as f:
+            for item in f_genes:
+                f.write(f"{item}\n")
+        with open(outfolder + ct + '_b_genes.txt', 'w') as f:
+            for item in b_genes:
+                f.write(f"{item}\n")
+        with open(outfolder + ct + '_n_genes.txt', 'w') as f:
+            for item in n_genes:
+                f.write(f"{item}\n")
+
+    return m_genes, f_genes, b_genes, n_genes
+
+def plot_sig_gene_lists(m_genes_all, f_genes_all, b_genes_all, n_genes_all, cell_class,sex_stats_folder, savefig = True):
+    # Count the frequency of each gene
+    m_gene_counts = Counter(m_genes_all)
+    # Get the most common genes (e.g., top 10)
+    m_most_common_genes = m_gene_counts.most_common(5)
+    # Separate the genes and their counts for plotting
+    m_genes, m_counts = zip(*m_most_common_genes)
+    
+    # Count the frequency of each gene
+    f_gene_counts = Counter(f_genes_all)
+    # Get the most common genes (e.g., top 10)
+    f_most_common_genes = f_gene_counts.most_common(5)
+    # Separate the genes and their counts for plotting
+    f_genes, f_counts = zip(*f_most_common_genes)
+    
+    # Count the frequency of each gene
+    b_gene_counts = Counter(b_genes_all)
+    # Get the most common genes (e.g., top 10)
+    b_most_common_genes = b_gene_counts.most_common(5)
+    # Separate the genes and their counts for plotting
+    b_genes, b_counts = zip(*b_most_common_genes)
+    
+    # Count the frequency of each gene
+    n_gene_counts = Counter(n_genes_all)
+    # Get the most common genes (e.g., top 10)
+    n_most_common_genes = n_gene_counts.most_common(5)
+    # Separate the genes and their counts for plotting
+    n_genes, n_counts = zip(*n_most_common_genes)
+
+
+    # Plot the histogram
+    fig,ax = plt.subplots(2,2,figsize = (12,8))
+    ax[0,0].bar(m_genes, m_counts, color='blue')
+    ax[0,1].bar(f_genes, f_counts, color='red')
+    ax[1,0].bar(b_genes, b_counts, color='green')
+    ax[1,1].bar(n_genes, n_counts, color='purple')
+
+    ax[0,0].set_ylabel('frequency')
+    ax[0,0].set_title(cell_class + ' top male bias genes')
+
+    ax[0,1].set_ylabel('frequency')
+    ax[0,1].set_title(cell_class + ' top female bias genes')
+
+    ax[1,0].set_ylabel('frequency')
+    ax[1,0].set_title(cell_class + ' top breeder bias genes')
+
+
+    ax[1,1].set_ylabel('frequency')
+    ax[1,1].set_title(cell_class + ' top naive bias genes')
+    if savefig:
+        plt.savefig(sex_stats_folder + cell_class + '_top_genes_per_population.pdf', bbox_inches='tight')
+    plt.show()    
+
+    return None

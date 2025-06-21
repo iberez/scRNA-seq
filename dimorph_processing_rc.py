@@ -36,18 +36,21 @@ import csv
 import matplotlib as mpl
 today = str(date.today())
 
-def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered, folder, cell_class, sort=False, write_to_file = False):
+def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered, folder, cell_class, sort=False, write_to_file = False, int_mode = False):
     '''uses plis_filtered metadata to reshuffle df_ge, then re process thru standard pipe except skip clustering'''
     #change matplotlib font type to make compatibile with illustrator
     mpl.rcParams['pdf.fonttype'] = 42
     mpl.rcParams['ps.fonttype'] = 42
     
+    outfolder = folder + str(cell_class) + '_l3_processed/'
+    os.makedirs(outfolder, exist_ok=True)
+
     #get expr matrix with filtered cells but with before all genes (before feat selection)
     df_ge  = df_ge.reindex(columns = meta_data_df_plis_filtered.columns)
     count = np.isinf(df_ge).values.sum() 
     print("It contains " + str(count) + " infinite values") 
     #feature selection
-    cv_df = dp.analyze_cv(df = df_ge,
+    cv_df, df_n = dp.analyze_cv(df = df_ge,
                       norm_scale_factor=20000,
                       num_top_genes=30,
                       plot_flag=1,
@@ -59,7 +62,7 @@ def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered,
     count = np.isinf(df).values.sum() 
     print("It contains " + str(count) + " infinite values") 
     print ('#nan values', df.isnull().sum().sum())
-    log_std_arr,status_df = dp.log_and_standerdize_df(df,status_df)
+    log_std_arr = dp.log_and_standerdize_df(df, log = True)
     #log / standerdize
     df_ls = pd.DataFrame(data = log_std_arr.T, index = df.index, columns=df.columns)
 
@@ -70,26 +73,29 @@ def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered,
                                                 status_df=status_df)
 
     meta_data_df_pca = meta_data_df_plis_filtered.T.copy()
-
-    vars_use = ['SampleID']
+    if int_mode:
+        vars_use = ['SampleID','dataset']
+    else:
+        vars_use = ['SampleID']
+    
     ho = hm.run_harmony(arr_pca,meta_data_df_pca,vars_use,max_iter_harmony=20)
     hm_arr = ho.Z_corr.T
 
     perplexity,status_df = dp.get_perplexity(pca_arr = hm_arr, cutoff=500, plot_flag=1, status_df = status_df)
-
+    #use perplixtiy = 100, exageration = 5 as in FC paper for final visual of clusters
     arr_tsne,status_df = dp.do_tsne(arr = hm_arr, 
                                 n_components=2,
                                 n_iter=1000,
                                 learning_rate=50,
-                                early_exaggeration=12,
+                                early_exaggeration=5,
                                 init='pca', 
-                                perplexity = perplexity,
+                                perplexity = 100,
+                                metric = 'correlation',
                                 status_df = status_df)
 
     #linkage again for updated dendrogram
     linkage_alg = 'ward'
     dist_metric = 'euclidean'
-
 
     if sort:
         df, meta_data_df_plis_filtered_og, linkage_cluster_order_og, Z_ordered, mpg_pca, linkage_cluster_order_po = dp.inter_cluster_sort(df,
@@ -107,25 +113,25 @@ def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered,
         plt.figure()
         ax = sns.heatmap(mpg_pca_df.corr(method='pearson'))
         plt.title('correlation pre_linkage_f')
-        plt.savefig(folder + str(cell_class) + '_mpg_pca_corr_pre_linkage_f_ft42.pdf')
+        plt.savefig(outfolder + str(cell_class) + '_mpg_pca_corr_pre_linkage_f_ft42.pdf')
         plt.show()
 
         mpg_pca_pl_df = mpg_pca_df.reindex(columns = linkage_cluster_order_og)
         plt.figure()
         ax = sns.heatmap(mpg_pca_pl_df.corr(method='pearson'), yticklabels=True, xticklabels=True)
         plt.title('correlation post linkage_f')
-        plt.savefig(folder + str(cell_class) + '_mpg_pca_corr_post_linkage_f_ft42.pdf', transparent = True)
+        plt.savefig(outfolder + str(cell_class) + '_mpg_pca_corr_post_linkage_f_ft42.pdf', transparent = True)
         plt.show()
 
         #intracluster sort
         df_s = df.reindex(columns = meta_data_df_plis_filtered_og.columns)
-        df, meta_data_df_plis_filtered_og, cluster_indices_filtered = dp.intra_cluster_sort(df_s, 
+        df, meta_data_df_plis_filtered_og_tmp, cluster_indices_filtered = dp.intra_cluster_sort(df_s, 
                                                                             meta_data_df_plis_filtered_og, 
                                                                             linkage_cluster_order_og,
                                                                             mode = 'rc')
         #update labels to make sequential
-        meta_data_df_plis_filtered,linkage_cluster_order_filtered = dp.update_metadata_cluster_labels(linkage_cluster_order_og,meta_data_df_plis_filtered_og, mode = 'rc')
-    
+        meta_data_df_plis_filtered,linkage_cluster_order_filtered = dp.update_metadata_cluster_labels(linkage_cluster_order_og,meta_data_df_plis_filtered_og_tmp, mode = 'rc')
+
 
     #run enrichment again
     marker_genes_sorted_f, pos_f, ind_f, ind_s_f, mgs_f = dp.compute_marker_genes(df,
@@ -136,7 +142,7 @@ def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered,
                                                     n_markers=5,
                                                     class_score_name=str(cell_class) + '_xi1_scores_filtered')
     df_marker_f = df.loc[marker_genes_sorted_f,:]
-    marker_log_and_std_arr_f, status_df = dp.log_and_standerdize_df(df_marker_f,status_df, log = False)
+    marker_log_and_std_arr_f = dp.log_and_standerdize_df(df_marker_f, log = False)
     df_marker_log_and_std_f = pd.DataFrame(index = df_marker_f.index, 
                                             columns=df.columns, 
                                             data = marker_log_and_std_arr_f.T)
@@ -147,17 +153,13 @@ def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered,
     
     change_indices_f = dp.get_heatmap_cluster_borders(meta_data_df_plis_filtered)
     tg_f, tgfs_f = dp.get_heatmap_labels(mgs_f, ind_f, ind_s_f)
+    print (tg_f)
     #heatmap filtered/reenriched data
     #%matplotlib inline
     #sanity check - plotting only filtered df (clusters removed)
 
     fsw = dp.compute_fs_waterfall(marker_genes_sorted_f)
-    #vglut1: fsw - 0.4
-    #vglut: fsw - 0.6
-    if cell_class == 'Vglut1':
-        fsw-=0.4 
-    if cell_class == 'GABA':
-        fsw-=0.2 
+    fsw+=.2
     dp.plot_marker_heatmap(df_marker_log_and_std_col_f, 
                         pos_f, 
                         linkage_cluster_order_filtered, 
@@ -166,18 +168,19 @@ def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered,
                         tgfs_f, 
                         linkage_alg,
                         dist_metric,
-                        folder,
+                        outfolder,
                         fs_waterfall = fsw,
                         savefig = True,
                         cell_class = str(cell_class)+'_filtered_tg_reenrich_reproc')
     
+    
     #write to file
     if write_to_file:
         print ('writing to file')
-        df.to_feather(folder + str(cell_class) + '_df_plis_filtered.feather')
-        df_marker_f.to_feather(folder+str(cell_class) + '_df_marker_f' + today +'.feather')
-        meta_data_df_plis_filtered.to_json(folder+str(cell_class)+ '_meta_data_df_plis_filtered' + today +'.json')
-
+        df.to_feather(outfolder + str(cell_class) + '_df_plis_filtered' + today + '.feather')
+        df_marker_f.to_feather(outfolder+str(cell_class) + '_df_marker_f' + today +'.feather')
+        meta_data_df_plis_filtered.to_json(outfolder+str(cell_class)+ '_meta_data_df_plis_filtered' + today +'.json')
+        np.save(outfolder + 'arr_tsne.npy', arr_tsne)
         #also save dict with clusters and markers for each clusters
         file3 = str(cell_class) + '_cl_mg_dict_f' + today
 
@@ -188,12 +191,12 @@ def reprocess(df_ge, meta_data_df_plis_filtered, linkage_cluster_order_filtered,
         cl_mg_dict_f = dict(map(lambda i,j : (i,j) , lco_int,tg_f))
 
         #write dict to file
-        with open(folder+file3+'.json', "w") as outfile: 
+        with open(outfolder+file3+'.json', "w") as outfile: 
             json.dump(cl_mg_dict_f, outfile)
 
         #write labels csv to file
         # File path for the output CSV
-        output_file = folder + str(cell_class) + '_filtered_labels_rc.csv'
+        output_file = outfolder + str(cell_class) + '_filtered_labels_rc.csv'
 
         # Writing the dictionary to the CSV
         with open(output_file, mode="w", newline="") as file:

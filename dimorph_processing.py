@@ -38,6 +38,9 @@ from matplotlib.cm import ScalarMappable
 from datetime import date
 import matplotlib as mpl
 #import mpld3
+import scanpy as sc
+import anndata as ad
+from matplotlib.colors import to_hex
 
 today = str(date.today())
 mpl.rcParams['pdf.fonttype'] = 42
@@ -264,8 +267,8 @@ def analyze_cv(df,norm_scale_factor,num_top_genes,plot_flag, use_huber = False):
         for i in range(len(pos)):
             plt.text(pos[i][0]+offset,pos[i][1]+offset,genes[i])
     plt.show()
-    
-    return log_mucv_df_sorted
+
+    return log_mucv_df_sorted, df_n
 
 def get_top_cv_genes(df, cv_df, plot_flag, status_df):
     '''takes output of analyze cv, the cv_df sorted from high to low of cv values to fit line,
@@ -299,7 +302,7 @@ def get_top_cv_genes(df, cv_df, plot_flag, status_df):
     
     return gene_index, updated_df, status_df
 
-def log_and_standerdize_df(df, status_df, log=True):
+def log_and_standerdize_df(df, log=True):
     '''takes log and then performs standardization of gene expression matrix, returns np array'''
     if log:
         df = np.log2(df+1)
@@ -308,9 +311,8 @@ def log_and_standerdize_df(df, status_df, log=True):
     log_std_arr = std_scale.transform(df.T)
     print ('column (gene) mean after standardization: {:.2f}'.format(log_std_arr[:,0].mean()))
     print ('column (gene) sigma after standardization: {:.2f}'.format(log_std_arr[:,0].std()))
-    status_df.loc['log_and_standerdize',:] = True
     
-    return log_std_arr,status_df
+    return log_std_arr
 
 def analyze_pca(arr, n_components, optimize_n, plot_flag, status_df):
     '''performs pca on arr using n_components. plots PCA explained variance ratio as a function of components, 
@@ -428,7 +430,7 @@ def get_perplexity(pca_arr, cutoff, plot_flag, status_df):
     
     return perplexity, status_df
 
-def do_tsne(arr,n_components, n_iter, learning_rate, early_exaggeration, init, perplexity, status_df):
+def do_tsne(arr,n_components, n_iter, learning_rate, early_exaggeration, init, perplexity,metric, status_df):
     '''performs tsne on inputted arr with specified perplexity'''
     print ('creating tsne object with the following parameters: \n' + 
            'n_components:{}'.format(n_components) + '\n' +
@@ -443,7 +445,9 @@ def do_tsne(arr,n_components, n_iter, learning_rate, early_exaggeration, init, p
                 learning_rate=learning_rate,
                 early_exaggeration=early_exaggeration,
                 init=init, 
-                perplexity = perplexity)
+                perplexity = perplexity,
+                metric=metric,
+                random_state=1)
 
     # Apply t-SNE on the arr
     X_tsne = tsne.fit_transform(arr)
@@ -459,7 +463,7 @@ def do_tsne(arr,n_components, n_iter, learning_rate, early_exaggeration, init, p
     
     return X_tsne, status_df
 
-def compute_eps(minpts, eps_prc, arr, status_df):
+def compute_eps(minpts, eps_prc, arr):
     '''Amit's method for computing epsilon parameter used in dbscan:
         1) compute distance matrix for input arr
         2) sort columns by ascending values
@@ -485,11 +489,81 @@ def compute_eps(minpts, eps_prc, arr, status_df):
     print ('minpts: ', minpts)
     print ('epsilon percentile', eps_prc)
     print ('epsilon: ', str(epsilon) + '\n')
-    status_df.loc['compute_eps',:] = True
-    
-    return epsilon, minpts, status_df
 
-def do_dbscan(epsilon, minpts, arr, status_df):
+    
+    return epsilon, minpts
+
+def optimal_eps(arr, k):
+    '''alternate method for finding epsilon. takes a 2d array (e.g. tsne arr), computes distance matrix, avg distance of each point to k nearest neighbors, sorts distance in asending order, then finds the knee of the inflection point
+    assumes inflection point is at the elbow of the curve
+    for use with tsne/dbscan, k = minpts, determined emprically'''
+
+    dist_m = squareform(pdist(arr, metric='euclidean'))
+
+    n = dist_m.shape[0]  # Number of points
+
+    # Step 1: Calculate average k-distance for each point
+    average_k_distances = []
+    for i in range(n):
+        # Get the row of distances for point i
+        row = dist_m[i]
+        # Sort distances in ascending order
+        sorted_distances = np.sort(row)
+        # Take the k smallest positive distances (indices 1 to k)
+        k_nearest_distances = sorted_distances[1:k+1]
+        # Compute the average
+        avg_k = np.mean(k_nearest_distances)
+        average_k_distances.append(avg_k)
+
+    # Step 2: Sort the average k-distances in ascending order
+    sorted_avg_k = np.sort(average_k_distances)
+
+    # Step 3: Plot the k-distance graph
+    fig,ax = plt.subplots()
+    ax.plot(sorted_avg_k)
+    ax.set_xlabel('Points sorted by average k-distance')
+    ax.set_ylabel('Average k-distance')
+    ax.set_title('k-Distance Graph for k=50')
+    ax.grid(True)  # Optional: adds a grid for better readability
+    plt.show()
+
+    #use the latter half of the points to avoid early spike
+    y = sorted_avg_k[len(sorted_avg_k)//2:]
+    x = np.arange(len(sorted_avg_k)//2, len(sorted_avg_k))
+
+    #find knee using max distance of chord
+    #where chord is the line between the first and last point
+    n = len(x)
+
+    # Step 1: Define the endpoints A (first point) and B (last point)
+    A = np.array([x[0], y[0]])
+    B = np.array([x[n-1], y[n-1]])
+
+    # Step 2: Compute perpendicular distances for all points
+    distances = []
+    for i in range(n):
+        P = np.array([x[i], y[i]])
+        numerator = abs((P[0] - A[0]) * (B[1] - A[1]) - (P[1] - A[1]) * (B[0] - A[0]))
+        denominator = np.sqrt((B[0] - A[0])**2 + (B[1] - A[1])**2)
+        distance = numerator / denominator
+        distances.append(distance)
+
+    # Step 3: Find the index of the maximum distance
+    knee_index = np.argmax(distances)
+    knee_x = x[knee_index]
+    knee_y = y[knee_index]
+
+    print(f"The knee is at x = {knee_x}, y = {knee_y}")
+
+    fig,ax = plt.subplots()
+    ax.plot(x,y)
+    ax.vlines(knee_x, ymin = 0, ymax = knee_y, color = 'r', linestyle = '--')
+    ax.hlines(knee_y, xmin = x[0], xmax = knee_x, color = 'r', linestyle = '--')
+    plt.show()
+
+    return knee_y
+
+def do_dbscan(epsilon, minpts, arr):
     ''' Do dbscan using scikit-learn implementation:
     https://scikit-learn.org/stable/modules/generated/sklearn.cluster.DBSCAN.html
         Parameters
@@ -544,9 +618,86 @@ def do_dbscan(epsilon, minpts, arr, status_df):
     plt.xticks([])
     plt.yticks([])
     plt.show()
-    status_df.loc['do_dbscan',:] = True
     
-    return labels_noise_rm, n_clusters_, arr_df_noise_rm, status_df
+    return labels_noise_rm, n_clusters_, arr_df_noise_rm
+
+def do_dbscan_keep_noise(epsilon, minpts, arr,savefig = False, out_folder = None):
+    ''' Do dbscan using scikit-learn implementation, but keep noise by assigning each noise point to nearest label:
+    https://scikit-learn.org/stable/modules/generated/sklearn.cluster.DBSCAN.html
+        Parameters
+    ----------
+    epsilon:
+        The maximum distance between two samples for one to be considered as in the neighborhood of the other. 
+    minpts: int
+        The number of samples (or total weight) in a neighborhood for a point to be considered as a core point.
+    arr: numpy.ndarray
+        2D input array, typically output from tsne
+    Returns
+    -------
+    labels: 1-D array
+       Cluster labels for each point in the dataset given to fit(). Noisy samples are given the label -1.
+    n_clusters_: int
+        number of clusters (noise cluster removed)
+    '''
+    print (f"running dbscan with epsilon: {epsilon}  and minpts: {minpts}")
+    db = DBSCAN(eps=epsilon, min_samples=minpts).fit(arr)
+    labels = db.labels_
+
+    # Number of clusters in labels, ignoring noise if present.
+    n_clusters_ = len(set(labels)) - (1 if -1 in labels else 0)
+    n_noise_ = list(labels).count(-1)
+
+    print("Estimated number of clusters: %d" % n_clusters_)
+    print("Estimated number of noise points: %d" % n_noise_)
+    
+    arr_df = pd.DataFrame(arr, columns=['tsne-1','tsne-2'])
+
+    #for each noise point, find the nearest cluster and assign it that label
+    noise_indices = np.where(labels == -1)[0]
+    points_indices = np.where(labels != -1)[0]
+    #print (len(noise_indices))
+    for noise_index in noise_indices:
+        # Compute distances from the noise point to all other points
+        distances = np.linalg.norm(arr[noise_index] - arr, axis=1)
+
+        # Restrict distances to only non-noise points
+        non_noise_distances = distances[points_indices]
+
+        # Find the index of the nearest non-noise point
+        nearest_index_in_points = np.argmin(non_noise_distances)
+        nearest_index = points_indices[nearest_index_in_points]
+
+        # Assign the label of the nearest non-noise point to the noise point
+        labels[noise_index] = labels[nearest_index]
+    #print (len(labels))
+    #print (len(labels[labels != -1]))
+    fig,ax = plt.subplots()
+    ax.set_box_aspect(1)
+    ax.axis('off')
+    p = sns.scatterplot(data = arr_df,
+                        x = 'tsne-1',
+                        y= 'tsne-2',
+                        hue = labels, 
+                        legend = "full", 
+                        palette = "deep",
+                        s = 1)
+    #sns.move_legend(p, "upper right", bbox_to_anchor = (1.17, 1.), title = 'Clusters')
+    # Annotate with cluster labels at the median of each cluster
+    for label in set(labels):
+        if label != -1:
+            cluster_median = arr_df[labels == label].median()
+            ax.annotate(label, cluster_median, fontsize=8, color='black',
+                        ha='center', va='center', bbox=dict(boxstyle='round', alpha=0.2))
+    
+    p.legend_.remove()
+    plt.title(f"Estimated number of clusters: {n_clusters_}")
+    plt.xticks([])
+    plt.yticks([])
+    if savefig:
+        plt.savefig(out_folder + 'dbscan_plot.png')
+    plt.show()
+
+    return labels, n_clusters_, arr_df
 
 def histogram_pts_per_cluster(labels, minpts):
     '''Using labels output from DBSCAN, this function uses the counter method to 
@@ -556,10 +707,11 @@ def histogram_pts_per_cluster(labels, minpts):
     plt.bar(cluster_pts.keys(), cluster_pts.values())
     plt.xlabel('unique cluster')
     plt.ylabel('num pts (cells)')
-    #plt.ylim([0,100])
+    plt.ylim([0,minpts+500])
     plt.axhline(y = minpts, color = 'r', linestyle = 'dashed', label = 'min_pts')
     plt.legend()
     plt.show()
+    return sorted(cluster_pts.items())
 
 def sort_by_cluster_label(df,meta_data_df,arr_df,labels):
     '''
@@ -600,7 +752,7 @@ def sort_by_cluster_label(df,meta_data_df,arr_df,labels):
     #sort df using arr_df_sorted index
     df_updated = df_updated.iloc[arr_df_sorted.index,:]
     
-    return df_updated, meta_data_df, unique_labels
+    return df_updated, meta_data_df, unique_labels, arr_df_sorted
 
 def inter_cluster_sort(df, meta_data_df, unique_labels, n_components, linkage_alg, dist_metric, mode = None):
     '''
@@ -612,7 +764,8 @@ def inter_cluster_sort(df, meta_data_df, unique_labels, n_components, linkage_al
     '''
     #transpose since we PCA reduce on genes (df _ls is inputted as cellsxgenes)
     #remove transpose for _raw (already genesxcells)
-    #df = df.T
+    #if mode == None:
+        #df = df.T
     #compute mean for each gene, for each cluster
     mean_per_gene_per_cluster_arr = np.zeros((len(df.index),len(unique_labels)))
     for i in range(len(unique_labels)):
@@ -925,7 +1078,7 @@ def plot_marker_heatmap(df, pos, linkage_cluster_order, change_indices, tg, tgfs
 
     if savefig:
         print ('saving heatmap..')
-        plt.savefig(folder+'heatmap_' + cell_class + '_' +linkage_alg+'_'+dist_metric+'_' +today+'.jpeg', dpi = 1200)
+        plt.savefig(folder+'heatmap_' + cell_class + '_' +linkage_alg+'_'+dist_metric+'_' +today+'.png', dpi = 1200)
         #use mpld3 to save interactive plot as html
         #html_str = mpld3.fig_to_html(fig)
         #Html_file= open(folder+ 'mlpd3_heatmap_' + cell_class + '_' +linkage_alg+'_'+dist_metric + '_' +today+'.html',"w")
@@ -982,6 +1135,9 @@ def update_metadata_w_markers(folder, meta_data_df_plis_filtered, linkage_cluste
     #build marker row
     markers = pd.DataFrame(m_list, columns = meta_data_df_plis_filtered.columns, index = ['markers'])
     meta_data_df_plis_filtered_markers = pd.concat([meta_data_df_plis_filtered, markers])
+    #add full_name row (combining cell class, cluster_label and marker rows)
+    #last_three_rows = meta_data_df_plis_filtered_markers.iloc[-3:,:]
+    meta_data_df_plis_filtered_markers.loc['full_name'] = meta_data_df_plis_filtered_markers.loc['cell_class'] + '-' + meta_data_df_plis_filtered_markers.loc['cluster_label'].astype(str) + '-' + meta_data_df_plis_filtered_markers.loc['markers']
     if write_to_file:
         #write updated metadata to file
         file = cell_class + 'meta_data_df_plis_f_markers_' + today
@@ -1112,7 +1268,7 @@ def plot_subclass_marker_heatmap_w_bool_bars(df, pos, linkage_cluster_order, cha
     for i,v in enumerate(tg):
         xpos = change_indices[i]
         plt.text(xpos,ypos, tgfs[i], 
-                 verticalalignment='top', horizontalalignment = 'left', color="gray", fontsize = 1.3)
+                 verticalalignment='top', horizontalalignment = 'left', color="gray", fontsize = .05)
         ypos+=int(len(tg[i]))
     
     #add cluster labels
@@ -1291,7 +1447,7 @@ def plot_marker_mean_std(marker, mu_,std_, linkage_cluster_order):
     plt.xticks(ticks = np.arange(len(linkage_cluster_order)),labels=linkage_cluster_order)
     plt.show()
 
-def plot_marker_on_tsne(tsne_df,expr_df,marker_name,labels, cluster_labels, offset = None, nn=False):
+def plot_marker_on_tsne(tsne_df,expr_df,marker_name,labels, cluster_labels = None, offset = None, nn=False):
     
     x = np.array(tsne_df['tsne-1'])
     y = np.array(tsne_df['tsne-2'])
@@ -1301,9 +1457,9 @@ def plot_marker_on_tsne(tsne_df,expr_df,marker_name,labels, cluster_labels, offs
         fig, ax = plt.subplots( figsize = (9,6))
         scatter = ax.scatter(x, y, c = z , cmap = 'seismic' , s = 1)
         # Create colorbar
-        sm = ScalarMappable(cmap='seismic')
-        sm.set_array(z)
-        cbar = fig.colorbar(sm)
+        #sm = ScalarMappable(cmap='seismic')
+        #sm.set_array(z)
+        cbar = fig.colorbar(scatter, ax=ax)
         cbar.set_label('Expr')
         plt.title('Log/Standerdized '+ marker_name + ' Expression')
 
@@ -1320,7 +1476,7 @@ def plot_marker_on_tsne(tsne_df,expr_df,marker_name,labels, cluster_labels, offs
         cbar.set_label('Expr')
         plt.title(f"{marker_name}")
         #plt.title('Log/Standerdized Nonneuronal Expression (Summed Exclude Markers)')
-
+    '''
     arr_xy = tsne_df.drop('labels', axis = 'columns')
     labels_filtered = set(labels)
     #labels_filtered = [label for label in set(labels) if label not in drop_clusters_list]
@@ -1334,6 +1490,16 @@ def plot_marker_on_tsne(tsne_df,expr_df,marker_name,labels, cluster_labels, offs
         ax.annotate(text = cl[1].split(' ')[1], xy=cluster_median, fontsize=8, color='Black',
                             ha='center', va='center', bbox=dict(boxstyle='round', alpha=0.2))
 
+    '''
+    for label in set(labels):
+        if label != -1:
+            cluster_data = tsne_df[labels == label]
+            cluster_median = cluster_data[['tsne-1', 'tsne-2']].median()
+            ax.annotate(label, cluster_median, fontsize=8, color='black',
+                        ha='center', va='center', bbox=dict(boxstyle='round', alpha=0.2))
+
+    #p.legend_.remove()
+    
     plt.xticks([])
     plt.yticks([])
 
@@ -1572,8 +1738,12 @@ def merge_heatmap_elements(clusters_to_merge,df_marker_log_and_std,meta_data_df_
 
 def compute_fs_waterfall(marker_genes_sorted):
     '''autocomputes optimal fontsize for waterfall gene labeling on heatmap'''
-    fs = (len(marker_genes_sorted)-260.5)/(-28.33332)
+    #fs = (len(marker_genes_sorted)-260.5)/(-28.33332)
+    #new equation
+    fs = (len(marker_genes_sorted)-306)/(-45)
     fs_w = round(fs,1)
+    print ('len marker gen sorted', len(marker_genes_sorted))
+    print ('fs', fs_w)
     return fs_w
 
 def update_tsne_params(arr,labels,linkage_cluster_order_og,linkage_cluster_order,linkage_cluster_order_filtered_tmp):
@@ -1646,6 +1816,16 @@ def plot_genes_in_cluster(df,meta_data_df,gene_list, c_label = None,ls=False):
     tmp.T.plot(kind = 'line', xticks = [])
     plt.show()
 
+def get_discrete_colors_from_strings(str_list, cmap_name='viridis'):
+    """
+    Given a list of strings, generate a list of discrete colors using the specified colormap.
+    Returns a list of RGBA tuples.
+    """
+    cmap = plt.get_cmap(cmap_name)
+    n = len(str_list)
+    colors = [cmap(i / max(n - 1, 1)) for i in range(n)]
+    return colors
+
 def plot_rc_tsne(meta_data_plis_filtered_markers,arr_tsne_f, cell_class, folder, m_2_c_dict = None, savefig = False):
     df_tsne_f = pd.DataFrame(index = meta_data_plis_filtered_markers.columns, data=arr_tsne_f, columns=['tsne-1','tsne-2'])
     df_tsne_f.insert(2,'markers', meta_data_plis_filtered_markers.loc['markers',:])
@@ -1658,13 +1838,13 @@ def plot_rc_tsne(meta_data_plis_filtered_markers,arr_tsne_f, cell_class, folder,
     for n, grp in df_tsne_f.groupby('markers'):
         #print (n)
         if m_2_c_dict != None:
-            plt.scatter(x = 'tsne-1',y = 'tsne-2', data=grp, label=n, s = 1, c = '#' + m_2_c_dict[str(n)])
+            plt.scatter(x = 'tsne-1',y = 'tsne-2', data=grp, label=n, s = 1, c = m_2_c_dict[str(n)])
         else:
             plt.scatter(x = 'tsne-1',y = 'tsne-2', data=grp, label=n, s = 1)
     # Plotting the centroids with labels
     for marker, (x, y) in centroids.iterrows():
         plt.text(x, y, marker, fontsize=10, ha='center', va='center', 
-                bbox=dict(facecolor='white', alpha=0.8, edgecolor='gray'))
+                bbox=dict(facecolor='white', alpha=0.8, edgecolor='white'))
 
     # Plot aesthetics
     plt.xlabel('tsne-1')
@@ -1672,6 +1852,39 @@ def plot_rc_tsne(meta_data_plis_filtered_markers,arr_tsne_f, cell_class, folder,
     plt.title(cell_class + ' filtered tsne (recalc)')
     plt.axis('off')
     #plt.legend(['Data Points'])
+    #plt.grid(True)
+    if savefig:
+        plt.savefig(folder + 'filtered_tsne_rc_'+cell_class+'_'+today+'.pdf')
+        np.save(folder + cell_class + '_arr_tsne_f_' + today + '.npy', arr_tsne_f)
+    plt.show()
+
+def plot_rc_tsne_group(meta_data_plis_filtered_markers,arr_tsne_f, cell_class, folder, m_2_c_dict = None, savefig = False):
+    df_tsne_f = pd.DataFrame(index = meta_data_plis_filtered_markers.columns, data=arr_tsne_f, columns=['tsne-1','tsne-2'])
+    df_tsne_f.insert(2,'markers', meta_data_plis_filtered_markers.loc['markers',:])
+    df_tsne_f.insert(3,'Group', meta_data_plis_filtered_markers.loc['Group',:])
+    # Group by 'markers' and calculate the centroid for each group
+    centroids = df_tsne_f.groupby('markers')[['tsne-1', 'tsne-2']].mean()
+
+    # Plotting the points
+    plt.figure(figsize=(10, 10))
+    #plt.scatter(df_tsne_f['tsne-1'], df_tsne_f['tsne-2'], c='blue', label='Points', alpha=0.5)
+    for n, grp in df_tsne_f.groupby('Group'):
+        #print (n)
+        if m_2_c_dict != None:
+            plt.scatter(x = 'tsne-1',y = 'tsne-2', data=grp, label=n, s = 1, c = m_2_c_dict[str(n)])
+        else:
+            plt.scatter(x = 'tsne-1',y = 'tsne-2', data=grp, label=n, s = 1)
+    # Plotting the centroids with labels
+    for marker, (x, y) in centroids.iterrows():
+        plt.text(x, y, marker, fontsize=10, ha='center', va='center', 
+                bbox=dict(facecolor='white', alpha=0.8, edgecolor='white'))
+
+    # Plot aesthetics
+    plt.xlabel('tsne-1')
+    plt.ylabel('tsne-2')
+    plt.title(cell_class + ' filtered tsne (recalc)')
+    plt.axis('off')
+    plt.legend(loc='upper right', fontsize=8)
     #plt.grid(True)
     if savefig:
         plt.savefig(folder + 'filtered_tsne_rc_'+cell_class+'_'+today+'.pdf')
@@ -1691,16 +1904,17 @@ def plot_rc_tsne_marker(meta_data_plis_filtered_markers,arr_tsne_f, df_marker_f,
         #plt.scatter(x = 'tsne-1',y = 'tsne-2', data=grp, label=n, s = 1)
 
     z = np.array(df_marker_f.loc[marker_name,:])
+    #print (np.max(z))
     fig, ax = plt.subplots( figsize = (9,6))
     scatter = ax.scatter(df_tsne_f['tsne-1'], df_tsne_f['tsne-2'], c = z , cmap = 'seismic' , s = 1, label = marker_name)
     # Create colorbar
-    #sm = ScalarMappable(cmap='seismic')
-    #sm.set_array(z)
-    #cbar = fig.colorbar(sm)
-    #cbar.set_label('Expr')
-    cbar = plt.colorbar(
-                        plt.cm.ScalarMappable(cmap='seismic'),
-                        ax=plt.gca())
+    sm = ScalarMappable(cmap='seismic', norm=scatter.norm)
+    sm.set_array(z)
+    cbar = fig.colorbar(sm, ax=ax)
+    cbar.set_label('Expr')
+    #cbar = plt.colorbar(
+    #                    plt.cm.ScalarMappable(cmap='seismic'),
+    #                    ax=plt.gca())
     plt.title('Log/Standerdized '+ marker_name + ' Expression')
 
 
@@ -1720,3 +1934,152 @@ def plot_rc_tsne_marker(meta_data_plis_filtered_markers,arr_tsne_f, df_marker_f,
         plt.savefig(folder + 'filtered_tsne_rc_marker_' + marker_name + '_' +cell_class+'_'+today+'.pdf')
         #np.save(folder + cell_class + 'arr_tsne_f_' + today + '.npy', arr_tsne_f)
     plt.show()
+
+def get_top_scores(folder, cell_class, top_n = 5):
+    scores = pd.read_csv(folder + str(cell_class) + '_xi1_scores_raw.csv', index_col=0)
+    scores.columns = [str(int(x) + 1) for x in scores.columns]
+
+    top_values = []
+    top_genes = []
+    for col in scores.columns:
+        # Get top 5 values for each column
+        top_vals = scores[col].nlargest(top_n).values
+        top_values.append(top_vals)
+        top_genes.append(scores.loc[scores[col].nlargest(top_n).index].index.tolist())
+
+
+    # Convert to numpy array for plotting (shape: n_columns x top_n)
+    top_values = np.array(top_values).T  # shape: (top_n, n_columns)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    for i in range(top_n):
+        ax.scatter(range(top_values.shape[1]), top_values[i], label=f'Top {i+1}')
+
+    ax.set_xlabel('Column (Cluster)')
+    ax.set_ylabel('Score Value')
+    ax.set_title('Top 5 Highest Values per Cluster')
+    ax.set_xticks(range(top_values.shape[1]),list(scores.columns))
+    #plt.legend()
+    #plt.savefig(folder + str(cell_class) + '_top_5_scores_f.png', bbox_inches='tight')
+    plt.show()
+
+    return top_genes,top_values
+
+def check_gene_cluster_expression(df, meta_data_df, gene, linkage_cluster_order):
+    df = df.reindex(columns=meta_data_df.columns)
+    fig,ax = plt.subplots(figsize = (15,5))
+    sns.violinplot(x=meta_data_df.T['cluster_label'], y=df.T[gene], inner = 'point')
+    #sns.stripplot(x=amy_vglut2_md.T['full_name'], y=amy_vglut2_ce_ge_cv_ls.T[gene], color="k", size=3)
+    ax.set_xticklabels(linkage_cluster_order, rotation = 90)
+    plt.show()
+
+def get_integrated_marker_names(meta_data_df, top_genes, cell_class, outfolder, write_to_file = False):
+    ''' use previously determined cell labels and top genes (highest enrichment score) to determine
+    integrated marker names for each cluster'''
+    #use exisitng labels to determine the majority markers for each cluster
+    majority_markers = []
+    for c in pd.unique(meta_data_df.loc['cluster_label',:]):
+        m = list(sorted(Counter(meta_data_df.loc['markers',meta_data_df.loc['cluster_label',:] == c]).items(), key=lambda x: x[1], reverse = True))[0][0]
+        majority_markers.append(m)
+
+
+    int_marker_labels = []
+    for i,tg in enumerate(top_genes):
+        #get intersection of top genes and majority markers
+        s_genes = list(set(top_genes[i]) & set(majority_markers[i].split('-')))
+        if len(s_genes) >= 3:
+            int_marker_labels.append(s_genes[0] + '-' + s_genes[1] + '-' + s_genes[2])
+        elif len(s_genes) == 2:
+            int_marker_labels.append(s_genes[0] + '-' + s_genes[1])
+        elif len(s_genes) == 1:
+            tg_ex = [x for x in tg if x not in s_genes and 'Rik' not in x] 
+            int_marker_labels.append(s_genes[0] + '-' + tg_ex[0])
+        else:
+            #use top 2 genes from enrichment
+            tg_ex = [x for x in tg if 'Rik' not in x]
+            if i == 17:
+                print (tg_ex)
+            int_marker_labels.append(tg[0] + '-' + tg[1])
+
+    int_marker_labels_df = pd.DataFrame(int_marker_labels, index=pd.unique(meta_data_df.loc['cluster_label',:]), columns=['raw_int_markers'])
+    int_marker_labels_df.to_csv(outfolder + str(cell_class) + '_int_marker_labels.csv')
+    #prepare metadata for updated naming
+    meta_data_df_int = meta_data_df.copy()
+    meta_data_df_int.drop(index = ['markers', 'full_name'], inplace=True)
+
+    return int_marker_labels_df, meta_data_df_int
+
+def dot_plot_ss_celltypes(df,meta_data_df, cell_class, normalize = True, mode = None,outfolder=None):
+    ''' dot plot of steroid receptor encoder genes using sex stats analyzed cell types'''
+    if normalize:
+        norm_scale_factor = 20000
+        column_sums = df.loc[:,df.columns].sum(axis=0)
+        df = df.div(column_sums)
+        #scale by norm_scale_factor
+        df = df.multiply(norm_scale_factor)
+
+    os.makedirs(outfolder, exist_ok=True)
+
+    adata_dp = ad.AnnData(df.T)
+    sc.settings.figdir = outfolder
+    #add aligned metadata
+    for x in meta_data_df.index:
+        adata_dp.obs[str(x)] = meta_data_df.loc[str(x),:]
+    
+    if mode == 'ssreceptor' or None:
+        dp_markers = ['Esr1','Esr2', 'Ar','Pgr']
+        dp = sc.pl.dotplot(adata_dp,dp_markers, groupby='full_name', color_map = 'viridis', dot_max = 0.5, save = str(cell_class) + '_ssreceptor_gene_dotplot.pdf')
+    elif mode == 'stress':
+        dp_markers = ['Ilf3','Htt','Ctnnb1','Nr3c1']
+        dp = sc.pl.dotplot(adata_dp,dp_markers, groupby='full_name', color_map = 'viridis', dot_max = 0.5, save = str(cell_class) + '_stress_gene_dotplot.pdf')
+    #dp_markers = ['Esr1','Esr2', 'Ar','Pgr']
+    #dp_markers = ['Esr1','Pgr','Oxtr','Esr2','Crh','Ar','Cyp19a1','Avp','Pgr','Mbp','Npy1r']
+    
+
+def marker_violin_plot(df,meta_data_df, cell_class, markers_list,normalize = True, outfolder=None):
+    ''' violin plot of marker genes'''
+    labels = get_cluster_labels(outfolder, str(cell_class)+'_int_marker_labels.csv')
+    colors = get_discrete_colors_from_strings(labels)
+    m_2_c_dict = dict(zip(labels,colors))
+    m_2_c_dict_hex = {k: to_hex(v) for k, v in m_2_c_dict.items()}
+
+        #add aligned metadata
+    if normalize:    
+        df_tmp = df.reindex(columns = meta_data_df.columns)
+        norm_scale_factor = 20000
+        column_sums = df_tmp.loc[:,df_tmp.columns].sum(axis=0)
+        df_tmp = df_tmp.div(column_sums)
+        #scale by norm_scale_factor
+        df_tmp = df_tmp.multiply(norm_scale_factor)
+
+    else:
+        df_tmp = df
+    adata_f = ad.AnnData(df_tmp.T)
+    for x in meta_data_df.index:
+        adata_f.obs[str(x)] = meta_data_df.loc[str(x),:]
+
+    markers = adata_f.obs['markers']
+
+    _, idx = np.unique(adata_f.obs['markers'], return_index=True)
+    markers = list(markers[np.sort(idx)])
+    fn = pd.unique(adata_f.obs['full_name']).tolist()
+
+    sc.settings.figdir = outfolder
+    #%matplotlib inline
+
+    # Create a custom color palette
+    palette = {k: v for k, v in m_2_c_dict_hex.items()}
+    custom_palette = sns.color_palette(list(palette.values()))
+    sns.set_palette(custom_palette)
+
+    sc.pl.stacked_violin(adata_f, 
+                        markers_list, 
+                        groupby='full_name', 
+                        categories_order= fn, 
+                        #colorbar_title = 'Log/Std Expression', 
+                        #vmax=2, 
+                        swap_axes= True,
+                        density_norm = 'width', 
+                        row_palette = custom_palette, 
+                        save = str(cell_class) +'violin_markers_m2c.pdf')
+
